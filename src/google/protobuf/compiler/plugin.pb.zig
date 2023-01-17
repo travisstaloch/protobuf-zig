@@ -11,6 +11,7 @@ const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
 const types = @import("../../../types.zig");
+const common = @import("../../../common.zig");
 const String = types.String;
 const empty_str = types.empty_str;
 
@@ -38,8 +39,7 @@ pub fn InitBytes(comptime T: type) MessageInit {
     return struct {
         pub fn initBytes(bytes: [*]u8, len: usize) void {
             assert(len == @sizeOf(T));
-            // var ptr = @ptrCast(*T, @alignCast(@alignOf(T), bytes));
-            var ptr = @ptrCast(*T, @alignCast(@typeInfo(*T).Pointer.alignment, bytes));
+            var ptr = common.ptrAlignCast(*T, bytes);
             if (@ptrToInt(ptr) == types.sentinel_pointer) @panic("invalid pointer");
             // std.log.debug("initBytes bytes={*} ptr.base.descriptor={*}", .{ bytes, ptr.base.descriptor });
             ptr.* = T.init();
@@ -143,11 +143,9 @@ pub fn Format(comptime T: type) FormatFn(T) {
 }
 
 fn optionalFieldIds(comptime field_descriptors: []const FieldDescriptor) []const c_uint {
-    // var result: []const c_uint = &.{};
     var result: [field_descriptors.len]c_uint = undefined;
     var count: u32 = 0;
     for (field_descriptors) |fd| {
-        // if (fd.label == .LABEL_OPTIONAL) result = result ++ [1]c_uint{fd.id};
         if (fd.label == .LABEL_OPTIONAL) {
             result[count] = fd.id;
             count += 1;

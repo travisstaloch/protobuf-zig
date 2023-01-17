@@ -17,6 +17,8 @@ const FieldDescriptor = types.FieldDescriptor;
 const BinaryData = types.BinaryData;
 const String = types.String;
 const virt_reader = @import("virtual-reader.zig");
+const common = @import("common.zig");
+const ptrAlignCast = common.ptrAlignCast;
 
 pub fn firstNBytes(s: []const u8, n: usize) []const u8 {
     return s[0..@min(s.len, n)];
@@ -203,43 +205,6 @@ pub fn Protobuf(comptime Reader: type) type {
                 if (num == value) return i;
             return error.NotFound;
         }
-        fn intRangeLookup2(ranges: List(IntRange), value: usize) !usize {
-            std.log.debug("intRangeLookup({any}, {})", .{ ranges.slice(), value });
-            var n: usize = 0;
-            var start: usize = 0;
-
-            if (ranges.len == 0)
-                return error.NotFound;
-            n = ranges.len;
-            while (n > 1) {
-                var mid = start + n / 2;
-
-                if (value < ranges.items[mid].start_value) {
-                    n = mid - start;
-                } else if (value >= ranges.items[mid].start_value +
-                    @intCast(c_int, (ranges.items[mid + 1].orig_index -%
-                    ranges.items[mid].orig_index)))
-                {
-                    var new_start = mid + 1;
-                    n = start + n - new_start;
-                    start = new_start;
-                } else return (value - @intCast(usize, ranges.items[mid].start_value)) +
-                    ranges.items[mid].orig_index;
-            }
-            if (n > 0) {
-                const start_orig_index = ranges.items[start].orig_index;
-                const range_size =
-                    ranges.items[start + 1].orig_index - start_orig_index;
-
-                if (ranges.items[start].start_value <= value and
-                    value < (ranges.items[start].start_value + @intCast(c_int, range_size)))
-                {
-                    return (value - @intCast(usize, ranges.items[start].start_value)) +
-                        start_orig_index;
-                }
-            }
-            return error.NotFound;
-        }
 
         const ScannedMember = struct {
             key: Key,
@@ -292,11 +257,10 @@ pub fn Protobuf(comptime Reader: type) type {
             // (required_fields_bitmap[(index)/8] & (1UL<<((index)%8)))
             // return
             _ = index;
-            panicf("TODO requiredFieldBitmapIsSet", .{});
+            todo("requiredFieldBitmapIsSet", .{});
         }
 
-        fn parsePackedRepeatedMember(scanned_member: ScannedMember, member: [*]u8, message: *Message, ctx: *Ctx) !void {
-            _ = .{ member, message, ctx };
+        fn parsePackedRepeatedMember(scanned_member: ScannedMember, member: [*]u8, _: *Message, ctx: *Ctx) !void {
             const field = scanned_member.field orelse unreachable;
             // size_t *p_n = STRUCT_MEMBER_PTR(size_t, message, field.quantifier_offset);
             // size_t siz = sizeofEltInRepeatedArray(field.type);
@@ -308,19 +272,21 @@ pub fn Protobuf(comptime Reader: type) type {
 
             switch (field.type) {
                 .TYPE_ENUM, .TYPE_INT32 => {
-                    const list = @ptrCast(*ListMut(i32), @alignCast(8, member));
+                    const list = ptrAlignCast(*ListMut(i32), member);
                     while (len > 0) : (len -= 1) {
                         // if(len == 0) break;
                         const int = try readVarint128(i32, ctx.reader, .int);
                         try list.append(ctx.alloc, int);
                     }
                 },
-                else => panicf("TODO {s}", .{@tagName(field.type)}),
+                else => todo("{s}", .{@tagName(field.type)}),
             }
         }
 
         fn parseOneofMember(scanned_member: ScannedMember, member: [*]u8, message: *Message, ctx: *Ctx) !void {
-            _ = .{ member, message, ctx };
+            _ = member;
+            _ = message;
+            _ = ctx;
             const field = scanned_member.field orelse unreachable;
             // size_t *p_n = STRUCT_MEMBER_PTR(size_t, message, field.quantifier_offset);
             // size_t siz = sizeofEltInRepeatedArray(field.type);
@@ -330,7 +296,7 @@ pub fn Protobuf(comptime Reader: type) type {
             // size_t count = 0;
 
             switch (field.type) {
-                else => panicf("TODO {s}", .{@tagName(field.type)}),
+                else => todo("{s}", .{@tagName(field.type)}),
             }
         }
 
@@ -361,7 +327,7 @@ pub fn Protobuf(comptime Reader: type) type {
         }
 
         fn listAppend(alloc: Allocator, member: [*]u8, comptime L: type, item: L.Child) !usize {
-            const list = @ptrCast(*L, @alignCast(8, member));
+            const list = ptrAlignCast(*L, member);
             const len = list.len;
             std.log.info("listAppend() 1 member {*} list {*}/{}/{}", .{ member, @ptrCast([*]u8, list.items), list.len, list.cap });
             try list.append(alloc, item);
@@ -377,8 +343,8 @@ pub fn Protobuf(comptime Reader: type) type {
             maybe_clear: bool,
             list_idx: *isize,
         ) !void {
+            _ = maybe_clear;
             // TODO when there is a return FALSE make it an error.FieldNotPresent
-            _ = .{ member, message, ctx, maybe_clear };
 
             const wire_type = scanned_member.key.wire_type;
             const field = scanned_member.field orelse unreachable;
@@ -435,7 +401,7 @@ pub fn Protobuf(comptime Reader: type) type {
                         field.descriptor,
                     );
                     std.log.debug("sizeof_message {}", .{field_desc.sizeof_message});
-                    const member_message = @ptrCast(*Message, @alignCast(8, member));
+                    const member_message = ptrAlignCast(*Message, member);
                     const messagep = @ptrCast([*]u8, message);
                     const offset = (@ptrToInt(member) - @ptrToInt(messagep));
                     assert(field.offset == offset);
@@ -458,13 +424,13 @@ pub fn Protobuf(comptime Reader: type) type {
                         assert(@ptrCast([*]u8, submessage) == buf.ptr);
                     }
                 },
-                else => panicf("TODO {s} ", .{@tagName(field.type)}),
+                else => todo("{s} ", .{@tagName(field.type)}),
             }
         }
 
         fn parseMember(scanned_member: ScannedMember, message: *Message, ctx: *Ctx, list_idx: *isize) !void {
             const field = scanned_member.field orelse
-                panicf("TODO unknown field", .{});
+                todo("unknown field", .{});
 
             std.log.debug("parseMember() '{s}' .{s} .{s} ", .{ field.name.slice(), @tagName(field.label), @tagName(field.type) });
             var member = @ptrCast([*]u8, message) + field.offset;
@@ -486,22 +452,21 @@ pub fn Protobuf(comptime Reader: type) type {
         pub fn deserialize(mdesc: ?*const MessageDescriptor, ctx: *Ctx) Error!*Message {
             const desc = mdesc orelse unreachable;
             var buf = try ctx.alloc.alignedAlloc(u8, 8, desc.sizeof_message);
-            const m = @ptrCast(*Message, @alignCast(8, buf.ptr));
+            const m = ptrAlignCast(*Message, buf.ptr);
             m.descriptor = null; // make sure uninit
             return deserializeTo(buf, desc, ctx);
         }
 
         fn deserializeTo(buf: []u8, mdesc: ?*const MessageDescriptor, ctx: *Ctx) Error!*Message {
             const desc = mdesc orelse unreachable;
-            const debug = false;
             std.log.info("\n--- deserialize {s} {*} ---", .{ desc.name.slice(), buf.ptr });
-            var tmpbuf: [mem.page_size]u8 = undefined;
+            // var tmpbuf: [mem.page_size]u8 = undefined;
 
             var last_field: ?*const FieldDescriptor = &desc.fields.items[0];
             // var last_field_index: usize = 0;
             var n_unknown: u32 = 0;
             assertIsMessageDescriptor(desc);
-            var message = @ptrCast(*Message, @alignCast(8, buf.ptr));
+            var message = ptrAlignCast(*Message, buf.ptr);
             std.log.debug("init1: message is_init={}", .{message.isInit()});
             if (!message.isInit()) {
                 if (desc.message_init) |initfn| {
@@ -514,7 +479,7 @@ pub fn Protobuf(comptime Reader: type) type {
             }
 
             const orig_desc = message.descriptor;
-            mem.copy(u8, &tmpbuf, buf);
+            // mem.copy(u8, &tmpbuf, buf);
             while (true) {
                 std.log.debug(
                     "init2: message is_init={} descriptor={*} message {*}",
@@ -546,7 +511,7 @@ pub fn Protobuf(comptime Reader: type) type {
                 } else field = last_field;
 
                 if (field != null and field.*.label == .LABEL_REQUIRED)
-                    @panic("TODO REQUIRED_FIELD_BITMAP_SET(last_field_index)");
+                    @panic("TODO requiredFieldBitmapSet(last_field_index)");
 
                 std.log.debug("field {s}.{s}", .{ desc.name.slice(), field.*.name.slice() });
 
@@ -555,7 +520,7 @@ pub fn Protobuf(comptime Reader: type) type {
                 if (list_idx >= 0) {
                     assert(field.*.label == .LABEL_REPEATED);
                     const member = @ptrCast([*]u8, message) + field.*.offset;
-                    const list = @ptrCast(*ListMut(*u8), @alignCast(8, member));
+                    const list = ptrAlignCast(*ListMut(*u8), member);
                     std.log.info("{s}({*}).{s}(0x{x}/{}) list={*}/{}/{} list[{}]={*}", .{
                         desc.name,
                         @ptrCast(*u8, message),
@@ -570,29 +535,29 @@ pub fn Protobuf(comptime Reader: type) type {
                     });
                 }
             }
-            if (debug) {
-                std.log.info("\n   --- summary for {s} ---", .{desc.name});
-                var i: usize = 0;
-                var last_start: usize = 0;
-                while (i + 8 < buf.len) : (i += 8) {
-                    if (!mem.eql(u8, tmpbuf[i..][0..8], buf[i..][0..8])) {
-                        const start = i;
-                        while (i < buf.len) : (i += 8) {
-                            if (mem.eql(u8, tmpbuf[i..][0..8], buf[i..][0..8])) break;
-                        }
-                        const old = tmpbuf[start..i];
-                        const new = buf[start..i];
-                        std.log.info("{s} - difference at 0x{x}/{}\nold {any}\nnew{any}", .{
-                            desc.name,
-                            start,
-                            start,
-                            @ptrCast([*]*u8, @alignCast(8, old.ptr))[0 .. old.len / 8],
-                            @ptrCast([*]*u8, @alignCast(8, new.ptr))[0 .. new.len / 8],
-                        });
-                        last_start = start;
-                    }
-                }
-            }
+            // if (debug) {
+            //     std.log.info("\n   --- summary for {s} ---", .{desc.name});
+            //     var i: usize = 0;
+            //     var last_start: usize = 0;
+            //     while (i + 8 < buf.len) : (i += 8) {
+            //         if (!mem.eql(u8, tmpbuf[i..][0..8], buf[i..][0..8])) {
+            //             const start = i;
+            //             while (i < buf.len) : (i += 8) {
+            //                 if (mem.eql(u8, tmpbuf[i..][0..8], buf[i..][0..8])) break;
+            //             }
+            //             const old = tmpbuf[start..i];
+            //             const new = buf[start..i];
+            //             std.log.info("{s} - difference at 0x{x}/{}\nold {any}\nnew{any}", .{
+            //                 desc.name,
+            //                 start,
+            //                 start,
+            //                 ptrAlignCast([*]*u8, old.ptr)[0 .. old.len / 8],
+            //                 ptrAlignCast([*]*u8, new.ptr)[0 .. new.len / 8],
+            //             });
+            //             last_start = start;
+            //         }
+            //     }
+            // }
 
             return message;
         }

@@ -14,11 +14,7 @@ pub fn log(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    switch (scope) {
-        std.log.default_log_scope => {},
-        else => if (@enumToInt(level) > @enumToInt(std_options.log_level))
-            return,
-    }
+    if (!std.log.logEnabled(level, scope)) return;
 
     std.debug.getStderrMutex().lock();
     defer std.debug.getStderrMutex().unlock();

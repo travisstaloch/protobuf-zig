@@ -1,4 +1,5 @@
 const std = @import("std");
+const common = @import("common.zig");
 
 pub fn VirtualReader(comptime ErrSet: type) type {
     const VirtualReaderImpl = struct {
@@ -11,16 +12,12 @@ pub fn VirtualReader(comptime ErrSet: type) type {
     return std.io.Reader(VirtualReaderImpl, ErrSet, VirtualReaderImpl.read);
 }
 
-fn ptrAlignCast(comptime Ptr: type, ptr: anytype) Ptr {
-    return @ptrCast(Ptr, @alignCast(@typeInfo(Ptr).Pointer.alignment, ptr));
-}
-
 pub fn virtualReader(reader_impl_ptr: anytype) VirtualReader(@TypeOf(reader_impl_ptr.reader()).Error) {
     const ErrSet = @TypeOf(reader_impl_ptr.reader()).Error;
     const ReaderImplPtr = @TypeOf(reader_impl_ptr);
     const gen = struct {
         pub fn read(context: *anyopaque, buffer: []u8) !usize {
-            return ptrAlignCast(ReaderImplPtr, context).reader().read(buffer);
+            return common.ptrAlignCast(ReaderImplPtr, context).reader().read(buffer);
         }
     };
     return VirtualReader(ErrSet){

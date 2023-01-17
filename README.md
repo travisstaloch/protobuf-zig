@@ -1,4 +1,4 @@
-:warning: this project is in its early early wip stage doesn't do much yet :warning:
+:warning: This project is in its early early stages and doesn't do much yet :warning:
 
 # About
 A tool for generating zig code capable of de/serializing to the protocol buffer wire format.  Depends on [protoc](https://developers.google.com/protocol-buffers/docs/downloads) to parse .proto files.  
