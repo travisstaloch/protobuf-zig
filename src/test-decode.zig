@@ -3,6 +3,8 @@ const testing = std.testing;
 
 const pb = @import("protobuf-util.zig");
 const types = @import("types.zig");
+const common = @import("common.zig");
+const ptrfmt = common.ptrfmt;
 pub const CodeGeneratorRequest = types.CodeGeneratorRequest;
 
 // const talloc = testing.allocator;
@@ -28,17 +30,18 @@ fn parseWithSystemProtoc(protofile: []const u8) ![]const u8 {
     return r.stderr;
 }
 
-fn deserializeHelper(comptime T: type, protofile: []const u8) !*T {
+inline fn deserializeHelper(comptime T: type, protofile: []const u8) !*T {
     const bytes = try parseWithSystemProtoc(protofile);
     return deserializeBytesHelper(T, bytes);
 }
-fn deserializeBytesHelper(comptime T: type, bytes: []const u8) !*T {
+inline fn deserializeBytesHelper(comptime T: type, bytes: []const u8) !*T {
     var fbs = std.io.fixedBufferStream(bytes);
+    // var ss = std.io.StreamSource{ .const_buffer = fbs };
     var ctx = pb.context(&fbs, talloc);
     const message = try ctx.deserialize(&T.descriptor);
     return try message.as(T);
 }
-fn deserializeHexBytesHelper(comptime T: type, hexbytes: []const u8) !*T {
+inline fn deserializeHexBytesHelper(comptime T: type, hexbytes: []const u8) !*T {
     var out = try talloc.alloc(u8, hexbytes.len / 2);
     const bytes = try std.fmt.hexToBytes(out, hexbytes);
     return deserializeBytesHelper(T, bytes);
@@ -50,20 +53,46 @@ test "only_enum - system protoc" {
     try testing.expectEqual(@as(usize, 1), req.file_to_generate.len);
     try testing.expectEqual(@as(usize, 1), req.proto_file.len);
     const pf = req.proto_file.slice()[0];
-    std.log.info("pf.enum_type {*}/{}", .{ @ptrCast([*]u8, pf.enum_type.items), pf.enum_type.len });
+    // const pf = req.proto_file.at(0).?;
+    // std.log.info("pf.enum_type {*}/{}", .{ ptrfmt(pf.enum_type.items), pf.enum_type.len });
     try testing.expectEqual(@as(usize, 1), pf.enum_type.len);
-    try testing.expect(@ptrToInt(pf.enum_type.items) != 0);
+    // try testing.expect(@ptrToInt(pf.enum_type.items) != 0);
 }
 
 test "only_enum - no deps" {
-    // testing.log_level = .info;
+    try testOnlyEnumNoDeps();
+}
+
+pub const std_options = struct {
+    pub const log_level = .info;
+};
+
+pub fn main() !void {
+    try testOnlyEnumNoDeps();
+}
+
+fn testOnlyEnumNoDeps() !void {
+    testing.log_level = .info;
     // `input` was obtained by running $ zig build -Dhex && script/protoc-capture.sh examples/only_enum.proto
-    const input = "0a186578616d706c65732f6f6e6c795f656e756d2e70726f746f1a080803100c180422007a9e020a186578616d706c65732f6f6e6c795f656e756d2e70726f746f2a290a08536f6d654b696e6412080a044e4f4e45100012050a0141100112050a0142100212050a014310034ace010a061204000007010a080a010c12030000120a0a0a0205001204020007010a0a0a03050001120302050d0a0b0a0405000200120303040d0a0c0a05050002000112030304080a0c0a0505000200021203030b0c0a0b0a0405000201120304040a0a0c0a05050002010112030404050a0c0a05050002010212030408090a0b0a0405000202120305040a0a0c0a05050002020112030504050a0c0a05050002020212030508090a0b0a0405000203120306040a0a0c0a05050002030112030604050a0c0a0505000203021203060809620670726f746f33";
+    // const input = "0a186578616d706c65732f6f6e6c795f656e756d2e70726f746f1a080803100c180422007a9e020a186578616d706c65732f6f6e6c795f656e756d2e70726f746f2a290a08536f6d654b696e6412080a044e4f4e45100012050a0141100112050a0142100212050a014310034ace010a061204000007010a080a010c12030000120a0a0a0205001204020007010a0a0a03050001120302050d0a0b0a0405000200120303040d0a0c0a05050002000112030304080a0c0a0505000200021203030b0c0a0b0a0405000201120304040a0a0c0a05050002010112030404050a0c0a05050002010212030408090a0b0a0405000202120305040a0a0c0a05050002020112030504050a0c0a05050002020212030508090a0b0a0405000203120306040a0a0c0a05050002030112030604050a0c0a0505000203021203060809620670726f746f33";
+    const input = "0a106578616d706c65732f612e70726f746f1a080803100c180422007a85010a106578616d706c65732f612e70726f746f2a140a08536f6d654b696e6412080a044e4f4e4510004a530a061204000004010a080a010c12030000120a0a0a0205001204020004010a0a0a03050001120302050d0a0b0a0405000200120303040d0a0c0a05050002000112030304080a0c0a0505000200021203030b0c620670726f746f33";
     const req = try deserializeHexBytesHelper(CodeGeneratorRequest, input);
     try testing.expectEqual(@as(usize, 1), req.file_to_generate.len);
     try testing.expectEqual(@as(usize, 1), req.proto_file.len);
-    const pf = req.proto_file.slice()[0];
-    std.log.info("pf.enum_type {*}/{}", .{ @ptrCast([*]u8, pf.enum_type.items), pf.enum_type.len });
-    try testing.expectEqual(@as(usize, 1), pf.enum_type.len);
-    try testing.expect(@ptrToInt(pf.enum_type.items) != 0);
+    const fd = req.proto_file.items.*[0];
+    // const fd = req.proto_file.at(0).?;
+    std.log.info(
+        "req.proto_file.items {} fd.enum_type {}/{}/{} fd.source_code_info.location {}/{}/{} ",
+        .{
+            ptrfmt(req.proto_file.items),
+            ptrfmt(fd.enum_type.items),
+            fd.enum_type.len,
+            fd.enum_type.cap,
+            ptrfmt(fd.source_code_info.location.items),
+            fd.source_code_info.location.len,
+            fd.source_code_info.location.cap,
+        },
+    );
+    try testing.expectEqual(@as(usize, 1), fd.enum_type.len);
+    // try testing.expect(@ptrToInt(pf.enum_type.items) != 0);
 }

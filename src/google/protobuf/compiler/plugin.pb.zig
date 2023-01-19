@@ -40,8 +40,6 @@ pub fn InitBytes(comptime T: type) MessageInit {
         pub fn initBytes(bytes: [*]u8, len: usize) void {
             assert(len == @sizeOf(T));
             var ptr = common.ptrAlignCast(*T, bytes);
-            if (@ptrToInt(ptr) == types.sentinel_pointer) @panic("invalid pointer");
-            // std.log.debug("initBytes bytes={*} ptr.base.descriptor={*}", .{ bytes, ptr.base.descriptor });
             ptr.* = T.init();
         }
     }.initBytes;
@@ -50,6 +48,7 @@ pub fn InitBytes(comptime T: type) MessageInit {
 pub fn Init(comptime T: type) fn () T {
     return struct {
         pub fn init() T {
+            assert(mem.endsWith(u8, @typeName(T), T.descriptor.name.slice()));
             return .{
                 .base = Message.init(&T.descriptor),
             };
@@ -75,7 +74,7 @@ pub fn Format(comptime T: type) FormatFn(T) {
                     value.base.isPresent(field_id) orelse true;
 
                 if (is_required_or_present_opt) {
-                    if (i != 1) _ = try writer.write(", ");
+                    if (i != 0) _ = try writer.write(", ");
 
                     const info = @typeInfo(f.type);
                     switch (info) {
@@ -279,7 +278,7 @@ pub const FieldDescriptor = extern struct {
     label: FieldDescriptorProto.Label,
     type: FieldDescriptorProto.Type,
     offset: c_uint,
-    descriptor: ?*align(8) const anyopaque = null,
+    descriptor: ?*const anyopaque = null,
     default_value: ?*const anyopaque = null,
     flags: FieldFlags = 0,
     reserved_flags: c_uint = 0,
@@ -299,7 +298,7 @@ pub const FieldDescriptor = extern struct {
         label: FieldDescriptorProto.Label,
         typ: FieldDescriptorProto.Type,
         offset: c_uint,
-        descriptor: ?*align(8) const anyopaque,
+        descriptor: ?*const anyopaque,
         default_value: ?*const anyopaque,
     ) FieldDescriptor {
         return .{
@@ -311,6 +310,11 @@ pub const FieldDescriptor = extern struct {
             .descriptor = descriptor,
             .default_value = default_value,
         };
+    }
+
+    pub fn getDescriptor(fd: FieldDescriptor, comptime T: type) *const T {
+        assert(fd.descriptor != null);
+        return common.ptrAlignCast(*const T, fd.descriptor);
     }
 };
 
@@ -463,7 +467,7 @@ pub const Message = extern struct {
     pub fn setPresent(m: *Message, field_id: c_uint) !void {
         const desc = m.descriptor orelse unreachable;
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse
-            return error.OptionalFieldNotFound;
+            return error.OptionalFieldMissing;
         std.log.debug("setPresent 1 m.fields_present {b:0>64}", .{m.fields_present});
         m.fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx);
         std.log.debug("setPresent 2 m.fields_present {b:0>64}", .{m.fields_present});
@@ -868,6 +872,9 @@ pub const FieldDescriptorProto = extern struct {
     options: FieldOptions = FieldOptions.init(),
     proto3_optional: bool = false,
 
+    pub const init = Init(FieldDescriptorProto);
+    pub const format = Format(FieldDescriptorProto);
+
     pub const Type = enum(u8) {
         // 0 is reserved for errors.
         TYPE_ERROR = 0,
@@ -1115,7 +1122,7 @@ pub const FieldDescriptorProto = extern struct {
         List(FieldDescriptor).init(&field_descriptors),
         List(c_uint).init(&field_indices_by_name),
         List(c_uint).init(&__field_ids),
-        InitBytes(FileDescriptorProto),
+        InitBytes(FieldDescriptorProto),
         &__opt_field_ids,
     );
 };
@@ -1659,7 +1666,8 @@ pub const DescriptorProto = extern struct {
     field: ListMut(FieldDescriptorProto) = ListMut(FieldDescriptorProto).initEmpty(),
     extension: ListMut(FieldDescriptorProto) = ListMut(FieldDescriptorProto).initEmpty(),
     // nested_type: ListMut(DescriptorProto) = .{ .dynamic_segments = undefined }, // workaround for 'dependency loop'
-    nested_type: ListMut(DescriptorProto) = .{ .items = undefined }, // workaround for 'dependency loop'
+    nested_type: ListMut(DescriptorProto) = .{ .items = ListMut(DescriptorProto).list_sentinel_ptr }, // workaround for 'dependency loop'
+    // nested_type: ListMut(DescriptorProto) = .{}, // workaround for 'dependency loop'
     enum_type: ListMut(EnumDescriptorProto) = ListMut(EnumDescriptorProto).initEmpty(),
     extension_range: ListMut(ExtensionRange) = ListMut(ExtensionRange).initEmpty(),
     oneof_decl: ListMut(OneofDescriptorProto) = ListMut(OneofDescriptorProto).initEmpty(),

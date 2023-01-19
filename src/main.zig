@@ -66,11 +66,10 @@ pub fn main() !void {
     // std.log.debug("files    {s}", .{files.items});
 
     if (mem.eql(u8, "google.protobuf.compiler.CodeGeneratorRequest", decode)) {
-        const req = CodeGeneratorRequest.init();
         var fbs = std.io.fixedBufferStream(input);
         var ctx = util.context(&fbs, alloc);
 
-        const message = try ctx.deserialize(req.base.descriptor);
+        const message = try ctx.deserialize(&CodeGeneratorRequest.descriptor);
         _ = message;
     } else {
         std.log.err("TODO support decoding more types", .{});
