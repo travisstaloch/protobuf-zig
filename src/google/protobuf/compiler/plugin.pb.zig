@@ -7,6 +7,9 @@
 //! and https://github.com/protocolbuffers/protobuf/blob/main/src/google/protobuf/compiler/plugin.proto
 //!
 
+// TODO get rid of __field_ids and __opt_field_ids.
+//   these are now redundant and left in only as a sanity check.
+
 const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
@@ -14,21 +17,18 @@ const types = @import("../../../types.zig");
 const common = @import("../../../common.zig");
 const String = types.String;
 const empty_str = types.empty_str;
+const ptrfmt = common.ptrfmt;
 
 const WireType = types.WireType;
 const BinaryType = types.BinaryType;
 
-// fn ListMut(comptime T: type) type {
-//     assert(@typeInfo(T) == .Struct);
-//     return types.SegmentedList0(T);
-// }
+fn ListMut(comptime T: type) type {
+    assert(@typeInfo(T) == .Struct);
+    assert(T != String);
+    return types.ListTypeMut(*T);
+}
 const List = types.ListType;
-const ListMut = types.ListTypeMut;
 const ListMut1 = types.ListTypeMut;
-// fn ListMut1(comptime T: type) type {
-//     assert(T == String or @typeInfo(T) != .Struct);
-//     return types.ArrayListMut(T);
-// }
 
 pub const SERVICE_DESCRIPTOR_MAGIC = 0x14159bc3;
 pub const MESSAGE_DESCRIPTOR_MAGIC = 0x28aaeef9;
@@ -39,6 +39,7 @@ pub fn InitBytes(comptime T: type) MessageInit {
     return struct {
         pub fn initBytes(bytes: [*]u8, len: usize) void {
             assert(len == @sizeOf(T));
+            // @memset(bytes, 0, len);
             var ptr = common.ptrAlignCast(*T, bytes);
             ptr.* = T.init();
         }
@@ -61,15 +62,14 @@ pub fn FormatFn(comptime T: type) type {
     return fn (T, comptime []const u8, std.fmt.FormatOptions, anytype) WriteErr!void;
 }
 pub fn Format(comptime T: type) FormatFn(T) {
+    const debug = true;
     return struct {
         pub fn format(value: T, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) WriteErr!void {
-            // try writer.print("{s}.{s} :: ", .{ T.descriptor.package_name, T.descriptor.name });
             try writer.print("{s} :: ", .{T.descriptor.name.slice()});
             inline for (std.meta.fields(T)[1..]) |f, i| { // skip base: Message
 
                 // skip if optional field and not present
                 const field_id = T.__field_ids[i];
-
                 const is_required_or_present_opt =
                     value.base.isPresent(field_id) orelse true;
 
@@ -79,7 +79,6 @@ pub fn Format(comptime T: type) FormatFn(T) {
                     const info = @typeInfo(f.type);
                     switch (info) {
                         .Struct => {
-                            // try writer.print("{s} has Child {}\n", .{ @typeName(f.type), @hasDecl(f.type, "Child") });
                             if (T == String) {
                                 if (@field(value, f.name).len > 0) {
                                     _ = try writer.write(f.name);
@@ -88,7 +87,6 @@ pub fn Format(comptime T: type) FormatFn(T) {
                                 }
                             } else if (@hasDecl(f.type, "Child")) {
                                 const val = @field(value, f.name);
-                                // try writer.print("{*}/{}", .{ val.items, val.len });
                                 if (val.len > 0) {
                                     _ = try writer.write(f.name);
                                     _ = try writer.write(": ");
@@ -101,7 +99,10 @@ pub fn Format(comptime T: type) FormatFn(T) {
                             }
                         },
                         .Pointer => |ptr| switch (ptr.size) {
-                            .One => try writer.print("{}", .{@field(value, f.name).*}),
+                            .One => if (debug)
+                                try writer.print("{}", .{ptrfmt(@field(value, f.name))})
+                            else
+                                try writer.print("{}", .{@field(value, f.name).*}),
                             else => |size| if (std.meta.trait.isZigString(f.type))
                                 try writer.print("\"{s}\"", .{@field(value, f.name)})
                             else if (size == .Many and
@@ -112,10 +113,7 @@ pub fn Format(comptime T: type) FormatFn(T) {
                                 if (@ptrToInt(p) != 0 and p != types.empty_str) {
                                     _ = try writer.write(f.name);
                                     _ = try writer.write(": ");
-                                    // try writer.print("{*}-\"{s}\"", .{ p, p });
                                 }
-                                // else
-                                //     _ = try writer.write("null");
                             } else {
                                 @compileError(std.fmt.comptimePrint(
                                     "{} {s}",
@@ -129,7 +127,6 @@ pub fn Format(comptime T: type) FormatFn(T) {
                             try writer.print(".{s}", .{@tagName(@field(value, f.name))});
                         },
                         else => {
-                            // if (true) @compileError(@typeName(f.type));
                             _ = try writer.write(f.name);
                             _ = try writer.write(": ");
                             try writer.print("{}", .{@field(value, f.name)});
@@ -152,6 +149,27 @@ fn optionalFieldIds(comptime field_descriptors: []const FieldDescriptor) []const
     }
     return result[0..count];
 }
+fn fieldIds(comptime field_descriptors: []const FieldDescriptor) []const c_uint {
+    var result: [field_descriptors.len]c_uint = undefined;
+    for (field_descriptors) |fd, i| {
+        result[i] = fd.id;
+    }
+    return &result;
+}
+fn fieldIndicesByName(comptime field_descriptors: []const FieldDescriptor) []const c_uint {
+    const Tup = struct { c_uint, []const u8 };
+    var tups: [field_descriptors.len]Tup = undefined;
+    const lessThan = struct {
+        fn lessThan(_: void, a: Tup, b: Tup) bool {
+            return std.mem.lessThan(u8, a[1], b[1]);
+        }
+    }.lessThan;
+    for (field_descriptors) |fd, i| tups[i] = .{ @intCast(c_uint, i), fd.name.slice() };
+    std.sort.sort(Tup, &tups, {}, lessThan);
+    var result: [field_descriptors.len]c_uint = undefined;
+    for (tups) |tup, i| result[i] = tup[0];
+    return &result;
+}
 
 pub const BinaryData = extern struct {
     len: usize = 0,
@@ -172,16 +190,16 @@ pub const BinaryData = extern struct {
 // };
 pub const EnumValue = extern struct {
     name: String = String.initEmpty(),
-    c_name: String = String.initEmpty(),
+    zig_name: String = String.initEmpty(),
     value: c_int,
     pub fn init(
         name: [:0]const u8,
-        c_name: [:0]const u8,
+        zig_name: [:0]const u8,
         value: c_int,
     ) EnumValue {
         return .{
             .name = String.init(name),
-            .c_name = String.init(c_name),
+            .zig_name = String.init(zig_name),
             .value = value,
         };
     }
@@ -226,48 +244,54 @@ pub const IntRange = extern struct {
     }
 };
 
+fn enumValuesByNumber(comptime T: type) []const EnumValue {
+    const tags = std.meta.tags(T);
+    var result: [tags.len]EnumValue = undefined;
+    for (tags) |tag, i| {
+        result[i] = .{
+            .value = @enumToInt(tag),
+            .name = String.init(@tagName(tag)),
+            .zig_name = String.init(@typeName(T) ++ "." ++ @tagName(tag)),
+        };
+    }
+    return &result;
+}
+
 pub const EnumDescriptor = extern struct {
     magic: u32 = 0,
     name: String = String.initEmpty(),
     short_name: String = String.initEmpty(),
-    c_name: String = String.initEmpty(),
+    zig_name: String = String.initEmpty(),
     package_name: String = String.initEmpty(),
     values: List(EnumValue),
-    values_by_name: List(EnumValueIndex),
-    // value_ranges: List(IntRange),
     reserved1: ?*anyopaque = null,
     reserved2: ?*anyopaque = null,
     reserved3: ?*anyopaque = null,
     reserved4: ?*anyopaque = null,
 
-    pub fn init(
-        magic: u32,
-        comptime name: [:0]const u8,
-        package_name: [:0]const u8,
-        values: List(EnumValue),
-        values_by_name: List(EnumValueIndex),
-    ) EnumDescriptor {
+    pub fn init(comptime T: type) EnumDescriptor {
+        const typename = @typeName(T);
+        const names = common.splitOn([]const u8, typename, '.');
+        const name = names[1];
+        const values = T.enum_values_by_number;
         comptime {
-            if (findDecl(name, TopLevel)) |T| {
-                const tfields = std.meta.fields(T);
-                for (values.slice()) |field, i| {
-                    const fname = field.name.slice();
-                    const tfield = tfields[i];
-                    if (field.value != tfield.value)
-                        @compileError(std.fmt.comptimePrint("{s} {s} {} != {}", .{ name, fname, field.value, tfield.value }));
+            const tfields = std.meta.fields(T);
+            for (values) |field, i| {
+                const fname = field.name.slice();
+                const tfield = tfields[i];
+                if (field.value != tfield.value)
+                    @compileError(std.fmt.comptimePrint("{s} {s} {} != {}", .{ name, fname, field.value, tfield.value }));
 
-                    if (!mem.eql(u8, fname, tfield.name))
-                        @compileError(std.fmt.comptimePrint("{s} {s} != {s}", .{ name, fname, tfield.name }));
-                    // TODO sort fields and check against values_by_name
-                }
-            } else @compileError(std.fmt.comptimePrint("not found {s}", .{name}));
+                if (!mem.eql(u8, fname, tfield.name))
+                    @compileError(std.fmt.comptimePrint("{s} {s} != {s}", .{ name, fname, tfield.name }));
+                // TODO values_by_name
+            }
         }
         return .{
-            .magic = magic,
+            .magic = ENUM_DESCRIPTOR_MAGIC,
             .name = String.init(name),
-            .package_name = String.init(package_name),
-            .values = values,
-            .values_by_name = values_by_name,
+            .package_name = String.init(names[0]),
+            .values = List(EnumValue).init(values),
         };
     }
 };
@@ -318,35 +342,13 @@ pub const FieldDescriptor = extern struct {
     }
 };
 
-const TopLevel = @This();
-pub fn findDecl(comptime type_name: []const u8, comptime T: type) ?type {
-    comptime {
-        for (std.meta.declarations(T)) |d| {
-            if (mem.eql(u8, type_name, d.name)) {
-                const U = @field(T, d.name);
-                if (@TypeOf(U) == type)
-                    return U;
-            }
-            if (!d.is_pub) continue;
-            const U = @field(T, d.name);
-            if (@TypeOf(U) != type) continue;
-            const uinfo = @typeInfo(U);
-            if (uinfo != .Struct) continue;
-            if (findDecl(type_name, U)) |n| {
-                return n;
-            }
-        }
-        return null;
-    }
-}
-
 pub const MessageDescriptor = extern struct {
     magic: u32 = 0,
     name: String = String.initEmpty(),
+    zig_name: String = String.initEmpty(),
     package_name: String = String.initEmpty(),
     sizeof_message: usize = 0,
     fields: List(FieldDescriptor),
-    fields_sorted_by_name: List(c_uint),
     field_ids: List(c_uint),
     opt_field_ids: List(c_uint),
     message_init: MessageInit = null,
@@ -354,66 +356,64 @@ pub const MessageDescriptor = extern struct {
     reserved2: ?*anyopaque = null,
     reserved3: ?*anyopaque = null,
 
-    pub fn init(
-        magic: u32,
-        comptime name: [:0]const u8,
-        package_name: [:0]const u8,
-        sizeof_message: usize,
-        comptime fields: List(FieldDescriptor),
-        fields_sorted_by_name: List(c_uint),
-        field_ids: List(c_uint),
-        message_init: MessageInit,
-        opt_field_ids: []const c_uint,
-    ) MessageDescriptor {
+    pub fn init(comptime T: type) MessageDescriptor {
+        const typename = @typeName(T);
+        const names = common.splitOn([]const u8, typename, '.');
+        const name = names[1];
+        const result: MessageDescriptor = .{
+            .magic = MESSAGE_DESCRIPTOR_MAGIC,
+            .name = String.init(name),
+            .zig_name = String.init(typename),
+            .package_name = String.init(names[0]),
+            .sizeof_message = @sizeOf(T),
+            .fields = List(FieldDescriptor).init(&T.field_descriptors),
+            .field_ids = List(c_uint).init(T.field_ids),
+            .opt_field_ids = List(c_uint).init(T.opt_field_ids),
+            .message_init = InitBytes(T),
+        };
+        // TODO - audit and remove unnecessary checks
+        const fields = result.fields;
+        const field_ids = result.field_ids;
+        const opt_field_ids = result.opt_field_ids;
+        const expected_opt_field_ids = T.__opt_field_ids;
         assert(field_ids.len == fields.len);
         assert(opt_field_ids.len <= 64);
         comptime {
-            const expected_opt_fields = optionalFieldIds(fields.slice());
-            if (!(expected_opt_fields.len == opt_field_ids.len and mem.eql(u32, opt_field_ids, expected_opt_fields)))
+            if (!(expected_opt_field_ids.len == opt_field_ids.len and (opt_field_ids.len == 0 or mem.eql(c_uint, opt_field_ids.slice(), &expected_opt_field_ids))))
                 @compileError(std.fmt.comptimePrint(
-                    "expected len {} got {} {any}",
-                    .{ expected_opt_fields.len, opt_field_ids.len, expected_opt_fields },
+                    "expected len {} got {}\n{any}\n{any}",
+                    .{ expected_opt_field_ids.len, opt_field_ids.len, expected_opt_field_ids, opt_field_ids.slice() },
                 ));
-
             for (field_ids.slice()) |field_num, i| {
                 const field = fields.items[i];
-                // if (field.id != field_num and field.id != std.math.maxInt(u32) - field_num) @compileLog(field.id, field_num);
-                assert(field.id == field_num or field.id == std.math.maxInt(u32) - field_num);
+                assert(field.id == field_num);
+                if (!(field.id == T.__field_ids[i] or field.id == std.math.maxInt(u32) - T.__field_ids[i])) {
+                    @compileError(std.fmt.comptimePrint(
+                        "field {s} field.id {} != {} expected",
+                        .{ field.name, field.id, T.__field_ids[i] },
+                    ));
+                }
+            }
+
+            const sizeof_message = result.sizeof_message;
+            assert(sizeof_message == @sizeOf(T));
+            const len = @typeInfo(T).Struct.fields.len;
+            const ok = len == fields.len + 1;
+            if (!ok) @compileLog(name, fields.len, len);
+            assert(ok);
+            const tfields = std.meta.fields(T);
+            assert(mem.eql(u8, tfields[0].name, "base"));
+            assert(tfields[0].type == Message);
+            for (tfields[1..tfields.len]) |f, i| {
+                if (!mem.eql(u8, f.name, fields.items[i].name.slice()))
+                    @compileError(std.fmt.comptimePrint("{s} {s} != {s}", .{ name, f.name, fields.items[i].name }));
+                const expected_offset = @offsetOf(T, f.name);
+                if (expected_offset != fields.items[i].offset)
+                    @compileError(std.fmt.comptimePrint("{s} offset {} != {}", .{ name, expected_offset, fields.items[i].offset }));
             }
         }
-        comptime {
-            @setEvalBranchQuota(4000);
-            if (findDecl(name, TopLevel)) |T| {
-                assert(sizeof_message == @sizeOf(T));
-                const len = @typeInfo(T).Struct.fields.len;
-                const ok = len == fields.len + 1;
-                if (!ok) @compileLog(name, fields.len, len);
-                assert(ok);
-                const tfields = std.meta.fields(T);
-                for (tfields[1..tfields.len]) |f, i| {
-                    if (!mem.eql(u8, f.name, fields.items[i].name.slice()))
-                        @compileError(std.fmt.comptimePrint("{s} {s} != {s}", .{ name, f.name, fields.items[i].name }));
-                    const expected_offset = @offsetOf(T, f.name);
-                    if (expected_offset != fields.items[i].offset)
-                        @compileError(std.fmt.comptimePrint("{s} offset {} != {}", .{ name, expected_offset, fields.items[i].offset }));
-                    const expected_size = @sizeOf(T);
-                    if (expected_size != sizeof_message)
-                        @compileError(std.fmt.comptimePrint("{s} size {} != {}", .{ name, expected_size, sizeof_message }));
-                }
-            } else @compileError("couldn't find " ++ name);
-        }
 
-        return .{
-            .magic = magic,
-            .name = String.init(name),
-            .package_name = String.init(package_name),
-            .sizeof_message = sizeof_message,
-            .fields = fields,
-            .fields_sorted_by_name = fields_sorted_by_name,
-            .field_ids = field_ids,
-            .opt_field_ids = List(c_uint).init(opt_field_ids),
-            .message_init = message_init,
-        };
+        return result;
     }
 
     /// returns the index of `field_id` within `desc.opt_field_ids`
@@ -442,7 +442,7 @@ pub const MessageUnknownField = extern struct {
 pub const Message = extern struct {
     descriptor: ?*const MessageDescriptor,
     unknown_fields: ListMut(MessageUnknownField) = ListMut(MessageUnknownField).initEmpty(),
-    fields_present: u64 = 0,
+    optional_fields_present: u64 = 0,
 
     comptime {
         assert(@sizeOf(Message) == 40);
@@ -461,16 +461,16 @@ pub const Message = extern struct {
         const desc = m.descriptor orelse unreachable;
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse
             return null;
-        return (m.fields_present >> @intCast(u6, opt_field_idx)) & 1 != 0;
+        return (m.optional_fields_present >> @intCast(u6, opt_field_idx)) & 1 != 0;
     }
     /// returns error.OptionalFieldNotFound if field_id is a non optional field
     pub fn setPresent(m: *Message, field_id: c_uint) !void {
         const desc = m.descriptor orelse unreachable;
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse
             return error.OptionalFieldMissing;
-        std.log.debug("setPresent 1 m.fields_present {b:0>64}", .{m.fields_present});
-        m.fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx);
-        std.log.debug("setPresent 2 m.fields_present {b:0>64}", .{m.fields_present});
+        std.log.debug("setPresent 1 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
+        m.optional_fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx);
+        std.log.debug("setPresent 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
     }
 
     /// ptr cast to T. verifies that m.descriptor.name ends with @typeName(T)
@@ -493,7 +493,7 @@ pub const Message = extern struct {
 //     magic: u32 = 0,
 //     name: String,
 //     short_name: String,
-//     c_name: String,
+//     zig_name: String,
 //     package: String,
 //     methods: [*c]const MethodDescriptor,
 //     method_indices_by_name: [*c]const c_uint,
@@ -548,28 +548,12 @@ pub const UninterpretedOption = extern struct {
                 null,
             ),
         };
-        pub const field_indices_by_name = [_:0]c_uint{
-            1, // field[1] = is_extension
-            0, // field[0] = name_part
-        };
-        // pub const IntRange number_ranges[1 + 1] =
-        // {
-        //   { 1, 0 },
-        //   { 0, 2 }
-        // };
         pub const __field_ids = [_]c_uint{ 1, 2 };
         pub const __opt_field_ids = [_]c_uint{};
-        pub const descriptor = MessageDescriptor.init(
-            MESSAGE_DESCRIPTOR_MAGIC,
-            "NamePart",
-            "google.protobuf",
-            @sizeOf(NamePart),
-            List(FieldDescriptor).init(&NamePart.field_descriptors),
-            List(c_uint).init(&NamePart.field_indices_by_name),
-            List(c_uint).init(&NamePart.__field_ids),
-            InitBytes(NamePart),
-            &NamePart.__opt_field_ids,
-        );
+
+        pub const field_ids = fieldIds(&@This().field_descriptors);
+        pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+        pub const descriptor = MessageDescriptor.init(@This());
     };
 
     pub const field_descriptors = [7]FieldDescriptor{
@@ -637,33 +621,12 @@ pub const UninterpretedOption = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_:0]c_uint{
-        6, // field[6] = aggregate_value
-        4, // field[4] = double_value
-        1, // field[1] = identifier_value
-        0, // field[0] = name
-        3, // field[3] = negative_int_value
-        2, // field[2] = positive_int_value
-        5, // field[5] = string_value
-    };
-    // pub const IntRange number_ranges[1 + 1] =
-    // {
-    // FieldDescriptor.init( 2, 0 },
-    //   { 0, 7 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 2, 3, 4, 5, 6, 7, 8 };
     pub const __opt_field_ids = [_]c_uint{ 3, 4, 5, 6, 7, 8 };
-    pub const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "UninterpretedOption",
-        "google.protobuf",
-        @sizeOf(UninterpretedOption),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(UninterpretedOption),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const FieldOptions = extern struct {
@@ -692,28 +655,8 @@ pub const FieldOptions = extern struct {
         STRING_PIECE = 2,
 
         pub const default_value: CType = .STRING;
-        pub const enum_values_by_number = [_]EnumValue{
-            EnumValue.init("STRING", "FieldOptions.CType.STRING", 0),
-            EnumValue.init("CORD", "FieldOptions.CType.CORD", 1),
-            EnumValue.init("STRING_PIECE", "FieldOptions.CType.STRING_PIECE", 2),
-        };
-        // pub const google__protobuf__field_options__ctype__value_ranges = [_]IntRange{
-        // {0, 0},{0, 3}
-        // };
-        pub const enum_values_by_name = [_]EnumValueIndex{
-            EnumValueIndex.init("CORD", 1),
-            EnumValueIndex.init("STRING", 0),
-            EnumValueIndex.init("STRING_PIECE", 2),
-        };
-
-        pub const descriptor = EnumDescriptor.init(
-            ENUM_DESCRIPTOR_MAGIC,
-            "CType",
-            "google.protobuf.FieldOptions",
-            List(EnumValue).init(&enum_values_by_number),
-            List(EnumValueIndex).init(&enum_values_by_name),
-            // value_ranges,
-        );
+        pub const enum_values_by_number = enumValuesByNumber(@This());
+        pub const descriptor = EnumDescriptor.init(@This());
     };
 
     const JSType = enum(u8) {
@@ -727,28 +670,8 @@ pub const FieldOptions = extern struct {
         JS_NUMBER = 2,
 
         pub const default_value: JSType = .JS_NORMAL;
-        pub const enum_values_by_number = [_]EnumValue{
-            EnumValue.init("JS_NORMAL", "FieldOptions.JSType.JS_NORMAL", 0),
-            EnumValue.init("JS_STRING", "FieldOptions.JSType.JS_STRING", 1),
-            EnumValue.init("JS_NUMBER", "FieldOptions.JSType.JS_NUMBER", 2),
-        };
-        // pub const IntRange value_ranges[] = {
-        // {0, 0},{0, 3}
-        // };
-        pub const enum_values_by_name = [_]EnumValueIndex{
-            EnumValueIndex.init("JS_NORMAL", 0),
-            EnumValueIndex.init("JS_NUMBER", 2),
-            EnumValueIndex.init("JS_STRING", 1),
-        };
-        const descriptor = EnumDescriptor.init(
-            ENUM_DESCRIPTOR_MAGIC,
-            "JSType",
-            "google.protobuf.FieldOptions",
-            List(EnumValue).init(&enum_values_by_number),
-            List(EnumValueIndex).init(&enum_values_by_name),
-            // value_ranges,
-
-        );
+        pub const enum_values_by_number = enumValuesByNumber(@This());
+        const descriptor = EnumDescriptor.init(@This());
     };
 
     pub const field_descriptors = [_]FieldDescriptor{
@@ -825,37 +748,11 @@ pub const FieldOptions = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_:0]c_uint{
-        0, // field[0] = ctype
-        2, // field[2] = deprecated
-        4, // field[4] = jstype
-        3, // field[3] = lazy
-        1, // field[1] = packed
-        7, // field[7] = uninterpreted_option
-        6, // field[6] = unverified_lazy
-        5, // field[5] = weak
-    };
-    pub const number_ranges = [5 + 1]IntRange{
-        IntRange.init(1, 0),
-        IntRange.init(5, 3),
-        IntRange.init(10, 5),
-        IntRange.init(15, 6),
-        IntRange.init(999, 7),
-        IntRange.init(0, 8),
-    };
     pub const __field_ids = [_]c_uint{ 1, 2, 6, 5, 15, 3, 10, 999 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 6, 5, 15, 3, 10 };
-    pub const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "FieldOptions",
-        "google.protobuf",
-        @sizeOf(FieldOptions),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(FieldOptions),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const FieldDescriptorProto = extern struct {
@@ -908,58 +805,8 @@ pub const FieldDescriptorProto = extern struct {
         TYPE_SINT32 = 17, // Uses ZigZag encoding.
         TYPE_SINT64 = 18, // Uses ZigZag encoding.
 
-        pub const enum_values_by_number = [_]EnumValue{
-            EnumValue.init("TYPE_ERROR", "FieldDescriptorProto.Type.TYPE_ERROR", 0),
-            EnumValue.init("TYPE_DOUBLE", "FieldDescriptorProto.Type.TYPE_DOUBLE", 1),
-            EnumValue.init("TYPE_FLOAT", "FieldDescriptorProto.Type.TYPE_FLOAT", 2),
-            EnumValue.init("TYPE_INT64", "FieldDescriptorProto.Type.TYPE_INT64", 3),
-            EnumValue.init("TYPE_UINT64", "FieldDescriptorProto.Type.TYPE_UINT64", 4),
-            EnumValue.init("TYPE_INT32", "FieldDescriptorProto.Type.TYPE_INT32", 5),
-            EnumValue.init("TYPE_FIXED64", "FieldDescriptorProto.Type.TYPE_FIXED64", 6),
-            EnumValue.init("TYPE_FIXED32", "FieldDescriptorProto.Type.TYPE_FIXED32", 7),
-            EnumValue.init("TYPE_BOOL", "FieldDescriptorProto.Type.TYPE_BOOL", 8),
-            EnumValue.init("TYPE_STRING", "FieldDescriptorProto.Type.TYPE_STRING", 9),
-            EnumValue.init("TYPE_GROUP", "FieldDescriptorProto.Type.TYPE_GROUP", 10),
-            EnumValue.init("TYPE_MESSAGE", "FieldDescriptorProto.Type.TYPE_MESSAGE", 11),
-            EnumValue.init("TYPE_BYTES", "FieldDescriptorProto.Type.TYPE_BYTES", 12),
-            EnumValue.init("TYPE_UINT32", "FieldDescriptorProto.Type.TYPE_UINT32", 13),
-            EnumValue.init("TYPE_ENUM", "FieldDescriptorProto.Type.TYPE_ENUM", 14),
-            EnumValue.init("TYPE_SFIXED32", "FieldDescriptorProto.Type.TYPE_SFIXED32", 15),
-            EnumValue.init("TYPE_SFIXED64", "FieldDescriptorProto.Type.TYPE_SFIXED64", 16),
-            EnumValue.init("TYPE_SINT32", "FieldDescriptorProto.Type.TYPE_SINT32", 17),
-            EnumValue.init("TYPE_SINT64", "FieldDescriptorProto.Type.TYPE_SINT64", 18),
-        };
-        // pub const value_ranges = [_]IntRange {
-        // {1, 0},{0, 18}
-        // };
-        pub const enum_values_by_name = [_]EnumValueIndex{
-            EnumValueIndex.init("TYPE_BOOL", 7),
-            EnumValueIndex.init("TYPE_BYTES", 11),
-            EnumValueIndex.init("TYPE_DOUBLE", 0),
-            EnumValueIndex.init("TYPE_ENUM", 13),
-            EnumValueIndex.init("TYPE_FIXED32", 6),
-            EnumValueIndex.init("TYPE_FIXED64", 5),
-            EnumValueIndex.init("TYPE_FLOAT", 1),
-            EnumValueIndex.init("TYPE_GROUP", 9),
-            EnumValueIndex.init("TYPE_INT32", 4),
-            EnumValueIndex.init("TYPE_INT64", 2),
-            EnumValueIndex.init("TYPE_MESSAGE", 10),
-            EnumValueIndex.init("TYPE_SFIXED32", 14),
-            EnumValueIndex.init("TYPE_SFIXED64", 15),
-            EnumValueIndex.init("TYPE_SINT32", 16),
-            EnumValueIndex.init("TYPE_SINT64", 17),
-            EnumValueIndex.init("TYPE_STRING", 8),
-            EnumValueIndex.init("TYPE_UINT32", 12),
-            EnumValueIndex.init("TYPE_UINT64", 3),
-        };
-        pub const descriptor = EnumDescriptor.init(
-            ENUM_DESCRIPTOR_MAGIC,
-            "Type",
-            "google.protobuf.FieldDescriptorProto",
-            List(EnumValue).init(&enum_values_by_number),
-            List(EnumValueIndex).init(&enum_values_by_name),
-            // value_ranges,
-        );
+        pub const enum_values_by_number = enumValuesByNumber(@This());
+        pub const descriptor = EnumDescriptor.init(@This());
     };
 
     pub const Label = enum(u8) {
@@ -968,28 +815,8 @@ pub const FieldDescriptorProto = extern struct {
         LABEL_REQUIRED = 2,
         LABEL_REPEATED = 3,
 
-        pub const enum_values_by_number = [_]EnumValue{
-            EnumValue.init("LABEL_ERROR", "FieldDescriptorProto.Label.LABEL_ERROR", 0),
-            EnumValue.init("LABEL_OPTIONAL", "FieldDescriptorProto.Label.LABEL_OPTIONAL", 1),
-            EnumValue.init("LABEL_REQUIRED", "FieldDescriptorProto.Label.LABEL_REQUIRED", 2),
-            EnumValue.init("LABEL_REPEATED", "FieldDescriptorProto.Label.LABEL_REPEATED", 3),
-        };
-        // pub const value_ranges[] = {
-        // {1, 0},{0, 3}
-        // };
-        pub const enum_values_by_name = .{
-            EnumValueIndex.init("LABEL_OPTIONAL", 0),
-            EnumValueIndex.init("LABEL_REPEATED", 2),
-            EnumValueIndex.init("LABEL_REQUIRED", 1),
-        };
-        pub const descriptor = EnumDescriptor.init(
-            ENUM_DESCRIPTOR_MAGIC,
-            "Label",
-            "google.protobufFieldDescriptorProto",
-            List(EnumValue).init(&enum_values_by_number),
-            List(EnumValueIndex).init(&enum_values_by_name),
-            // value_ranges,
-        );
+        pub const enum_values_by_number = enumValuesByNumber(@This());
+        pub const descriptor = EnumDescriptor.init(@This());
     };
 
     pub const field_descriptors = [_]FieldDescriptor{
@@ -1093,38 +920,12 @@ pub const FieldDescriptorProto = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_:0]c_uint{
-        6, // field[6] = default_value
-        1, // field[1] = extendee
-        9, // field[9] = json_name
-        3, // field[3] = label
-        0, // field[0] = name
-        2, // field[2] = number
-        8, // field[8] = oneof_index
-        7, // field[7] = options
-        10, //* field[10] = proto3_optional
-        4, // field[4] = type
-        5, // field[5] = type_name
-    };
-    // pub const  number_ranges[2 + 1] =
-    // {
-    //   { 1, 0 },
-    //   { 17, 10 },
-    //   { 0, 11 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 1, 3, 4, 5, 6, 2, 7, 9, 10, 8, 17 };
     pub const __opt_field_ids = [_]c_uint{ 1, 3, 4, 5, 6, 2, 7, 9, 10, 8, 17 };
-    pub const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "FieldDescriptorProto",
-        "google.protobuf",
-        @sizeOf(FieldDescriptorProto),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(FieldDescriptorProto),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const EnumValueOptions = extern struct {
@@ -1155,29 +956,12 @@ pub const EnumValueOptions = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_:0]c_uint{
-        0, // field[0] = deprecated
-        1, // field[1] = uninterpreted_option
-    };
-    // pub const IntRange number_ranges[2 + 1] =
-    // {
-    //   { 1, 0 },
-    //   { 999, 1 },
-    //   { 0, 2 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 1, 999 };
     pub const __opt_field_ids = [_]c_uint{1};
-    const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "EnumValueOptions",
-        "google.protobuf",
-        @sizeOf(EnumValueOptions),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(EnumValueOptions),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const EnumValueDescriptorProto = extern struct {
@@ -1218,29 +1002,12 @@ pub const EnumValueDescriptorProto = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_:0]c_uint{
-        0, // field[0] = name
-        1, // field[1] = number
-        2, // field[2] = options
-    };
-    // pub const IntRange number_ranges[1 + 1] =
-    // {
-    //   { 1, 0 },
-    //   { 0, 3 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 1, 2, 3 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 3 };
-    pub const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "EnumValueDescriptorProto",
-        "google.protobuf",
-        @sizeOf(EnumValueDescriptorProto),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(EnumValueDescriptorProto),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const EnumOptions = extern struct {
@@ -1281,30 +1048,12 @@ pub const EnumOptions = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_:0]c_uint{
-        0, // field[0] = allow_alias
-        1, // field[1] = deprecated
-        2, // field[2] = uninterpreted_option
-    };
-    // pub const IntRange number_ranges[2 + 1] =
-    // {
-    //   { 2, 0 },
-    //   { 999, 2 },
-    //   { 0, 3 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 2, 3, 999 };
     pub const __opt_field_ids = [_]c_uint{ 2, 3 };
-    const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "EnumOptions",
-        "google.protobuf",
-        @sizeOf(EnumOptions),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(EnumOptions),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const EnumDescriptorProto = extern struct {
@@ -1345,28 +1094,12 @@ pub const EnumDescriptorProto = extern struct {
                 null,
             ),
         };
-        pub const field_indices_by_name = [_:0]c_uint{
-            1, // field[1] = end
-            0, // field[0] = start
-        };
-        // pub const IntRange number_ranges[1 + 1] =
-        // {
-        //   { 1, 0 },
-        //   { 0, 2 }
-        // };
+
         pub const __field_ids = [_]c_uint{ 1, 2 };
         pub const __opt_field_ids = [_]c_uint{ 1, 2 };
-        const descriptor = MessageDescriptor.init(
-            MESSAGE_DESCRIPTOR_MAGIC,
-            "EnumReservedRange",
-            "google.protobuf.EnumDescriptorProto",
-            @sizeOf(EnumReservedRange),
-            List(FieldDescriptor).init(&EnumReservedRange.field_descriptors),
-            List(c_uint).init(&EnumReservedRange.field_indices_by_name),
-            List(c_uint).init(&EnumReservedRange.__field_ids),
-            InitBytes(EnumReservedRange),
-            &EnumReservedRange.__opt_field_ids,
-        );
+        pub const field_ids = fieldIds(&@This().field_descriptors);
+        pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+        const descriptor = MessageDescriptor.init(@This());
     };
 
     pub const field_descriptors = [_]FieldDescriptor{
@@ -1416,31 +1149,12 @@ pub const EnumDescriptorProto = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_:0]c_uint{
-        0, // field[0] = name
-        2, // field[2] = options
-        4, // field[4] = reserved_name
-        3, // field[3] = reserved_range
-        1, // field[1] = value
-    };
-    // pub  const  number_ranges = [1 + 1]IntRange
-    // {
-    //   IntRange.init{ 1, 0 },
-    //   IntRange.init{ 0, 5 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 1, 2, 3, 4, 5 };
     pub const __opt_field_ids = [_]c_uint{ 1, 3 };
-    pub const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "EnumDescriptorProto",
-        "google.protobuf",
-        @sizeOf(EnumDescriptorProto),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(EnumDescriptorProto),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    pub const descriptor = MessageDescriptor.init(@This());
 };
 pub const ExtensionRangeOptions = extern struct {
     base: Message,
@@ -1459,27 +1173,12 @@ pub const ExtensionRangeOptions = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = .{
-        0, // field[0] = uninterpreted_option
-    };
-    // pub const IntRange number_ranges[1 + 1] =
-    // {
-    //   { 999, 0 },
-    //   { 0, 1 }
-    // };
+
     pub const __field_ids = [_]c_uint{999};
     pub const __opt_field_ids = [_]c_uint{};
-    const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "ExtensionRangeOptions",
-        "google.protobuf",
-        @sizeOf(ExtensionRangeOptions),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(ExtensionRangeOptions),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    const descriptor = MessageDescriptor.init(@This());
 };
 pub const OneofOptions = extern struct {
     base: Message,
@@ -1499,27 +1198,12 @@ pub const OneofOptions = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_]c_uint{
-        0, // field[0] = uninterpreted_option
-    };
-    // pub const IntRange number_ranges[1 + 1] =
-    // {
-    //   { 999, 0 },
-    //   { 0, 1 }
-    // };
+
     pub const __field_ids = [_]c_uint{999};
     pub const __opt_field_ids = [_]c_uint{};
-    const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "OneofOptions",
-        "google.protobuf",
-        @sizeOf(OneofOptions),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(OneofOptions),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    const descriptor = MessageDescriptor.init(@This());
 };
 pub const OneofDescriptorProto = extern struct {
     base: Message,
@@ -1548,28 +1232,12 @@ pub const OneofDescriptorProto = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_]c_uint{
-        0, // field[0] = name
-        1, // field[1] = options
-    };
-    // pub const IntRange number_ranges[1 + 1] =
-    // {
-    //   { 1, 0 },
-    //   { 0, 2 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 1, 2 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2 };
-    const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "OneofDescriptorProto",
-        "google.protobuf",
-        @sizeOf(OneofDescriptorProto),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(OneofDescriptorProto),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    const descriptor = MessageDescriptor.init(@This());
 };
 pub const MessageOptions = extern struct {
     base: Message,
@@ -1631,33 +1299,12 @@ pub const MessageOptions = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_]c_uint{
-        2, // field[2] = deprecated
-        3, // field[3] = map_entry
-        0, // field[0] = message_set_wire_format
-        1, // field[1] = no_standard_descriptor_accessor
-        4, // field[4] = uninterpreted_option
-    };
-    // pub const IntRange number_ranges[3 + 1] =
-    // {
-    //   { 1, 0 },
-    //   { 7, 3 },
-    //   { 999, 4 },
-    //   { 0, 5 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 1, 2, 3, 7, 999 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 3, 7 };
-    const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "MessageOptions",
-        "google.protobuf",
-        @sizeOf(MessageOptions),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(MessageOptions),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const DescriptorProto = extern struct {
@@ -1665,9 +1312,7 @@ pub const DescriptorProto = extern struct {
     name: String = String.initEmpty(),
     field: ListMut(FieldDescriptorProto) = ListMut(FieldDescriptorProto).initEmpty(),
     extension: ListMut(FieldDescriptorProto) = ListMut(FieldDescriptorProto).initEmpty(),
-    // nested_type: ListMut(DescriptorProto) = .{ .dynamic_segments = undefined }, // workaround for 'dependency loop'
-    nested_type: ListMut(DescriptorProto) = .{ .items = ListMut(DescriptorProto).list_sentinel_ptr }, // workaround for 'dependency loop'
-    // nested_type: ListMut(DescriptorProto) = .{}, // workaround for 'dependency loop'
+    nested_type: types.ListTypeMut(*DescriptorProto) = .{ .items = types.ListTypeMut(*DescriptorProto).list_sentinel_ptr }, // workaround for 'dependency loop'
     enum_type: ListMut(EnumDescriptorProto) = ListMut(EnumDescriptorProto).initEmpty(),
     extension_range: ListMut(ExtensionRange) = ListMut(ExtensionRange).initEmpty(),
     oneof_decl: ListMut(OneofDescriptorProto) = ListMut(OneofDescriptorProto).initEmpty(),
@@ -1714,29 +1359,12 @@ pub const DescriptorProto = extern struct {
                 null,
             ),
         };
-        pub const field_indices_by_name = [_]c_uint{
-            1, // field[1] = end
-            2, // field[2] = options
-            0, // field[0] = start
-        };
-        // pub const IntRange number_ranges[1 + 1] =
-        // {
-        //   { 1, 0 },
-        //   { 0, 3 }
-        // };
+
         pub const __field_ids = [_]c_uint{ 1, 2, 3 };
         pub const __opt_field_ids = [_]c_uint{ 1, 2, 3 };
-        const descriptor = MessageDescriptor.init(
-            MESSAGE_DESCRIPTOR_MAGIC,
-            "ExtensionRange",
-            "google.protobuf",
-            @sizeOf(ExtensionRange),
-            List(FieldDescriptor).init(&ExtensionRange.field_descriptors),
-            List(c_uint).init(&ExtensionRange.field_indices_by_name),
-            List(c_uint).init(&ExtensionRange.__field_ids),
-            InitBytes(ExtensionRange),
-            &ExtensionRange.__opt_field_ids,
-        );
+        pub const field_ids = fieldIds(&@This().field_descriptors);
+        pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+        const descriptor = MessageDescriptor.init(@This());
     };
 
     pub const ReservedRange = extern struct {
@@ -1766,28 +1394,12 @@ pub const DescriptorProto = extern struct {
                 null,
             ),
         };
-        pub const field_indices_by_name = [_]c_uint{
-            1, // field[1] = end
-            0, // field[0] = start
-        };
-        // pub const IntRange number_ranges[1 + 1] =
-        // {
-        //   { 1, 0 },
-        //   { 0, 2 }
-        // };
+
         pub const __field_ids = [_]c_uint{ 1, 2 };
         pub const __opt_field_ids = [_]c_uint{ 1, 2 };
-        const descriptor = MessageDescriptor.init(
-            MESSAGE_DESCRIPTOR_MAGIC,
-            "ReservedRange",
-            "google.protobuf",
-            @sizeOf(ReservedRange),
-            List(FieldDescriptor).init(&ReservedRange.field_descriptors),
-            List(c_uint).init(&ReservedRange.field_indices_by_name),
-            List(c_uint).init(&ReservedRange.__field_ids),
-            InitBytes(ReservedRange),
-            &ReservedRange.__opt_field_ids,
-        );
+        pub const field_ids = fieldIds(&@This().field_descriptors);
+        pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+        const descriptor = MessageDescriptor.init(@This());
     };
 
     pub const field_descriptors = [_]FieldDescriptor{
@@ -1882,36 +1494,12 @@ pub const DescriptorProto = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_]c_uint{
-        3, // field[3] = enum_type
-        5, // field[5] = extension
-        4, // field[4] = extension_range
-        1, // field[1] = field
-        0, // field[0] = name
-        2, // field[2] = nested_type
-        7, // field[7] = oneof_decl
-        6, // field[6] = options
-        9, // field[9] = reserved_name
-        8, // field[8] = reserved_range
-    };
-    // pub const IntRange number_ranges[1 + 1] =
-    // {
-    //   { 1, 0 },
-    //   { 0, 10 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 1, 2, 6, 3, 4, 5, 8, 7, 9, 10 };
     pub const __opt_field_ids = [_]c_uint{ 1, 7 };
-    pub const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "DescriptorProto",
-        "google.protobuf",
-        @sizeOf(DescriptorProto),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&DescriptorProto.field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(DescriptorProto),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const MethodOptions = extern struct {
@@ -1926,26 +1514,9 @@ pub const MethodOptions = extern struct {
         IDEMPOTENCY_UNKNOWN,
         NO_SIDE_EFFECTS,
         IDEMPOTENT,
-        pub const enum_values_by_number = [_]EnumValue{
-            EnumValue.init("IDEMPOTENCY_UNKNOWN", "MethodOptions.Idempotency.unknown", 0),
-            EnumValue.init("NO_SIDE_EFFECTS", "MethodOptions.Idempotency.no_side_effects", 1),
-            EnumValue.init("IDEMPOTENT", "MethodOptions.Idempotency.IDEMPOTENT", 2),
-        };
-        // pub const IntRange value_ranges[] = {
-        // {0, 0},{0, 3}
-        // };
-        pub const enum_values_by_name = [_]EnumValueIndex{
-            EnumValueIndex.init("IDEMPOTENCY_UNKNOWN", 0),
-            EnumValueIndex.init("IDEMPOTENT", 2),
-            EnumValueIndex.init("NO_SIDE_EFFECTS", 1),
-        };
-        const descriptor = EnumDescriptor.init(
-            ENUM_DESCRIPTOR_MAGIC,
-            "IdempotencyLevel",
-            "google.protobuf.MethodOptions",
-            List(EnumValue).init(&enum_values_by_number),
-            List(EnumValueIndex).init(&enum_values_by_name),
-        );
+
+        pub const enum_values_by_number = enumValuesByNumber(@This());
+        const descriptor = EnumDescriptor.init(@This());
     };
 
     pub const deprecated__default_value: c_uint = 0;
@@ -1979,31 +1550,12 @@ pub const MethodOptions = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_]c_uint{
-        0, // field[0] = deprecated
-        1, // field[1] = idempotency_level
-        2, // field[2] = uninterpreted_option
-    };
-    // pub const IntRange number_ranges[2 + 1] =
-    // {
-    //   { 33, 0 },
-    //   { 999, 2 },
-    //   { 0, 3 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 33, 34, 999 };
     pub const __opt_field_ids = [_]c_uint{ 33, 34 };
-    pub const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "MethodOptions",
-        "google.protobuf",
-        @sizeOf(MethodOptions),
-
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(MethodOptions),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const MethodDescriptorProto = extern struct {
@@ -2075,32 +1627,12 @@ pub const MethodDescriptorProto = extern struct {
             &server_streaming__default_value,
         ),
     };
-    pub const field_indices_by_name = [_]c_uint{
-        4, // field[4] = client_streaming
-        1, // field[1] = input_type
-        0, // field[0] = name
-        3, // field[3] = options
-        2, // field[2] = output_type
-        5, // field[5] = server_streaming
-    };
-    // pub const IntRange number_ranges[1 + 1] =
-    // {
-    //   { 1, 0 },
-    //   { 0, 6 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 1, 2, 3, 4, 5, 6 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 3, 4, 5, 6 };
-    const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "MethodDescriptorProto",
-        "google.protobuf",
-        @sizeOf(MethodDescriptorProto),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(MethodDescriptorProto),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const ServiceOptions = extern struct {
@@ -2131,29 +1663,12 @@ pub const ServiceOptions = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_]c_uint{
-        0, // field[0] = deprecated
-        1, // field[1] = uninterpreted_option
-    };
-    // pub const IntRange number_ranges[2 + 1] =
-    // {
-    //   { 33, 0 },
-    //   { 999, 1 },
-    //   { 0, 2 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 33, 999 };
     pub const __opt_field_ids = [_]c_uint{33};
-    const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "ServiceOptions",
-        "google.protobuf",
-        @sizeOf(ServiceOptions),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(ServiceOptions),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const ServiceDescriptorProto = extern struct {
@@ -2193,29 +1708,12 @@ pub const ServiceDescriptorProto = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_]c_uint{
-        1, // field[1] = method
-        0, // field[0] = name
-        2, // field[2] = options
-    };
-    // pub const IntRange number_ranges[1 + 1] =
-    // {
-    //   { 1, 0 },
-    //   { 0, 3 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 1, 2, 3 };
     pub const __opt_field_ids = [_]c_uint{ 1, 3 };
-    const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "ServiceDescriptorProto",
-        "google.protobuf",
-        @sizeOf(ServiceDescriptorProto),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(ServiceDescriptorProto),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const FileOptions = extern struct {
@@ -2250,28 +1748,9 @@ pub const FileOptions = extern struct {
         SPEED = 1,
         CODE_SIZE = 2,
         LITE_RUNTIME = 3,
-        pub const enum_values_by_number = [_]EnumValue{
-            EnumValue.init("NONE", "FileOptions.OptimizeMode.NONE", 0),
-            EnumValue.init("SPEED", "FileOptions.OptimizeMode.SPEED", 1),
-            EnumValue.init("CODE_SIZE", "FileOptions.OptimizeMode.CODE_SIZE", 2),
-            EnumValue.init("LITE_RUNTIME", "FileOptions.OptimizeMode.LITE_RUNTIME", 3),
-        };
-        // pub const  value_ranges = [] IntRange{
-        // {1, 0},{0, 3}
-        // };
-        pub const enum_values_by_name = [_]EnumValueIndex{
-            EnumValueIndex.init("CODE_SIZE", 2),
-            EnumValueIndex.init("LITE_RUNTIME", 3),
-            EnumValueIndex.init("NONE", 0),
-            EnumValueIndex.init("SPEED", 1),
-        };
-        pub const descriptor = EnumDescriptor.init(
-            ENUM_DESCRIPTOR_MAGIC,
-            "OptimizeMode",
-            "google.protobuf.FileOptions",
-            List(EnumValue).init(&enum_values_by_number),
-            List(EnumValueIndex).init(&enum_values_by_name),
-        );
+
+        pub const enum_values_by_number = enumValuesByNumber(@This());
+        pub const descriptor = EnumDescriptor.init(@This());
     };
     pub const java_multiple_files__default_value: c_int = 0;
     pub const java_string_check_utf8__default_value: c_int = 0;
@@ -2473,58 +1952,13 @@ pub const FileOptions = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_]c_uint{
-        11, // field[11] = cc_enable_arenas
-        5, // field[5] = cc_generic_services
-        13, // field[13] = csharp_namespace
-        9, // field[9] = deprecated
-        4, // field[4] = go_package
-        8, // field[8] = java_generate_equals_and_hash
-        6, // field[6] = java_generic_services
-        3, // field[3] = java_multiple_files
-        1, // field[1] = java_outer_classname
-        0, // field[0] = java_package
-        10, // field[10] = java_string_check_utf8
-        12, // field[12] = objc_class_prefix
-        2, // field[2] = optimize_for
-        15, // field[15] = php_class_prefix
-        17, // field[17] = php_generic_services
-        18, // field[18] = php_metadata_namespace
-        16, // field[16] = php_namespace
-        7, // field[7] = py_generic_services
-        19, // field[19] = ruby_package
-        14, // field[14] = swift_prefix
-        20, // field[20] = uninterpreted_option
-    };
-    // pub const IntRange number_ranges[11 + 1] =
-    // {
-    //   { 1, 0 },
-    //   { 8, 1 },
-    //   { 16, 5 },
-    //   { 20, 8 },
-    //   { 23, 9 },
-    //   { 27, 10 },
-    //   { 31, 11 },
-    //   { 36, 12 },
-    //   { 39, 14 },
-    //   { 44, 18 },
-    //   { 999, 20 },
-    //   { 0, 21 }
-    // };
+
     pub const __field_ids = [_]c_uint{ 1, 8, 10, 20, 27, 9, 11, 16, 17, 18, 42, 23, 31, 36, 37, 39, 40, 41, 44, 45, 999 };
     pub const __opt_field_ids = [_]c_uint{ 1, 8, 10, 20, 27, 9, 11, 16, 17, 18, 42, 23, 31, 36, 37, 39, 40, 41, 44, 45 };
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
 
-    const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "FileOptions",
-        "google.protobuf",
-        @sizeOf(FileOptions),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(FileOptions),
-        &__opt_field_ids,
-    );
+    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const SourceCodeInfo = extern struct {
@@ -2592,33 +2026,12 @@ pub const SourceCodeInfo = extern struct {
                 null,
             ),
         };
-        pub const field_indices_by_name = [_]c_uint{
-            2, // field[2] = leading_comments
-            4, // field[4] = leading_detached_comments
-            0, // field[0] = path
-            1, // field[1] = span
-            3, // field[3] = trailing_comments
-        };
-        // pub const IntRange number_ranges[2 + 1] =
-        // {
-        //   { 1, 0 },
-        //   { 6, 4 },
-        //   { 0, 5 }
-        // };
+
         pub const __field_ids = [_]c_uint{ 1, 2, 3, 4, 6 };
         pub const __opt_field_ids = [_]c_uint{ 3, 4 };
-
-        const descriptor = MessageDescriptor.init(
-            MESSAGE_DESCRIPTOR_MAGIC,
-            "Location",
-            "google.protobuf",
-            @sizeOf(Location),
-            List(FieldDescriptor).init(&Location.field_descriptors),
-            List(c_uint).init(&Location.field_indices_by_name),
-            List(c_uint).init(&Location.__field_ids),
-            InitBytes(Location),
-            &Location.__opt_field_ids,
-        );
+        pub const field_ids = fieldIds(&@This().field_descriptors);
+        pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+        const descriptor = MessageDescriptor.init(@This());
     };
     pub const field_descriptors = [1]FieldDescriptor{
         FieldDescriptor.init(
@@ -2631,28 +2044,12 @@ pub const SourceCodeInfo = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_]c_uint{
-        0, //field[0] = location
-    };
-    // pub const IntRange number_ranges[1 + 1] =
-    // {
-    //   { 1, 0 },
-    //   { 0, 1 }
-    // };
+
     pub const __field_ids = [_]c_uint{1};
     pub const __opt_field_ids = [_]c_uint{};
-
-    const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "SourceCodeInfo",
-        "google.protobuf",
-        @sizeOf(SourceCodeInfo),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(SourceCodeInfo),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const FileDescriptorProto = extern struct {
@@ -2801,39 +2198,11 @@ pub const FileDescriptorProto = extern struct {
         ),
     };
 
-    pub const field_indices_by_name = [_:0]c_uint{
-        2, //  field[2] = dependency
-        12, //  field[12] = edition
-        4, //  field[4] = enum_type
-        6, //  field[6] = extension
-        3, //  field[3] = message_type
-        0, //  field[0] = name
-        7, //  field[7] = options
-        1, //  field[1] = package
-        9, //  field[9] = public_dependency
-        5, //  field[5] = service
-        8, //  field[8] = source_code_info
-        11, //  field[11] = syntax
-        10, //  field[10] = weak_dependency
-    };
-
     pub const __field_ids = [_]c_uint{ 1, 2, 3, 10, 11, 4, 5, 6, 7, 8, 9, 12, 13 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 8, 9, 12, 13 };
-    pub const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "FileDescriptorProto",
-        "google.protobuf",
-        @sizeOf(FileDescriptorProto),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(FileDescriptorProto),
-        &__opt_field_ids,
-    );
-    // pub const number_ranges = [1 + 1]IntRange{
-    //     IntRange.init(1, 0),
-    //     IntRange.init(0, 13),
-    // };
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const FileDescriptorSet = extern struct {
@@ -2842,14 +2211,6 @@ pub const FileDescriptorSet = extern struct {
 
     pub const init = Init(FileDescriptorSet);
     pub const format = Format(FileDescriptorSet);
-
-    pub const field_indices_by_name = [_:0]c_uint{
-        0, // field[0] = file
-    };
-    // pub const number_ranges = [1 + 1]IntRange{
-    //     IntRange.init(1, 0),
-    //     IntRange.init(0, 1),
-    // };
 
     pub const field_descriptors = [1]FieldDescriptor{
         FieldDescriptor.init(
@@ -2864,17 +2225,9 @@ pub const FileDescriptorSet = extern struct {
     };
     pub const __field_ids = [_]c_uint{1};
     pub const __opt_field_ids = [_]c_uint{};
-    pub const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "FileDescriptorSet",
-        "google.protobuf",
-        @sizeOf(FileDescriptorSet),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(FileDescriptorSet),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    pub const descriptor = MessageDescriptor.init(@This());
 };
 // pub const GeneratedCodeInfo__Annotation = extern struct {
 //     base: Message,
@@ -2938,29 +2291,12 @@ pub const Version = extern struct {
             null,
         ),
     };
-    pub const field_indices_by_name = [_:0]c_uint{
-        0, // field[0] = major
-        1, // field[1] = minor
-        2, // field[2] = patch
-        3, // field[3] = suffix
-    };
-    // pub const number_ranges = [1 + 1]IntRange{
-    //     IntRange.init(1, 0),
-    //     IntRange.init(0, 4),
-    // };
+
     pub const __field_ids = [_]c_uint{ 1, 2, 3, 4 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 3, 4 };
-    pub const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "Version",
-        "google.protobuf.compiler",
-        @sizeOf(Version),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(Version),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const CodeGeneratorRequest = extern struct {
@@ -3020,32 +2356,11 @@ pub const CodeGeneratorRequest = extern struct {
         ),
     };
 
-    pub const field_indices_by_name = [_:0]c_uint{
-        2, //  field[2] = compiler_version
-        0, //  field[0] = file_to_generate
-        1, //  field[1] = parameter
-        3, //  field[3] = proto_file
-    };
-
     pub const __field_ids = [_]c_uint{ 1, 2, 15, 3 };
     pub const __opt_field_ids = [_]c_uint{ 2, 3 };
-    // [2 + 1]IntRange{
-    //     IntRange.init(1, 0),
-    //     IntRange.init(15, 3),
-    //     IntRange.init(0, 4),
-    // };
-
-    pub const descriptor = MessageDescriptor.init(
-        MESSAGE_DESCRIPTOR_MAGIC,
-        "CodeGeneratorRequest",
-        "google.protobuf.compiler",
-        @sizeOf(CodeGeneratorRequest),
-        List(FieldDescriptor).init(&field_descriptors),
-        List(c_uint).init(&field_indices_by_name),
-        List(c_uint).init(&__field_ids),
-        InitBytes(CodeGeneratorRequest),
-        &__opt_field_ids,
-    );
+    pub const field_ids = fieldIds(&@This().field_descriptors);
+    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
+    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 // pub const CodeGeneratorResponse__File = extern struct {

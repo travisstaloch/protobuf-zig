@@ -3,6 +3,7 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const util = @import("protobuf-util.zig");
 const types = @import("types.zig");
+const common = @import("common.zig");
 pub const CodeGeneratorRequest = types.CodeGeneratorRequest;
 pub const std_options = struct {
     pub const log_level = std.meta.stringToEnum(std.log.Level, @tagName(@import("build_options").log_level)).?;
@@ -44,7 +45,7 @@ pub fn main() !void {
     const alloc = arena.allocator();
     const stdin = std.io.getStdIn().reader();
     const input = try stdin.readAllAlloc(alloc, std.math.maxInt(u32));
-    std.log.debug("stdin    {}...", .{std.fmt.fmtSliceHexLower(util.firstNBytes(input, 20))});
+    std.log.debug("stdin    {}...", .{std.fmt.fmtSliceHexLower(common.firstNBytes(input, 20))});
 
     var args = try std.process.argsAlloc(alloc);
     const exepath = args[0];
@@ -61,13 +62,10 @@ pub fn main() !void {
         else
             try files.append(args[0]);
     }
-    // std.log.debug("includes {s}", .{includes.items});
     std.log.debug("decode   {s}", .{decode});
-    // std.log.debug("files    {s}", .{files.items});
 
     if (mem.eql(u8, "google.protobuf.compiler.CodeGeneratorRequest", decode)) {
-        var fbs = std.io.fixedBufferStream(input);
-        var ctx = util.context(&fbs, alloc);
+        var ctx = util.context(input, alloc);
 
         const message = try ctx.deserialize(&CodeGeneratorRequest.descriptor);
         _ = message;
