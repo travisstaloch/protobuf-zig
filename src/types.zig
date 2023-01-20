@@ -16,12 +16,12 @@ pub fn IntegerBitset(comptime len: usize) type {
     return std.meta.Int(.unsigned, n);
 }
 
-// https://developers.google.com/protocol-buffers/docs/encoding#structure
+/// https://protobuf.dev/programming-guides/encoding/#structure
 pub const WireType = enum(u8) {
-    varint = 0,
-    fixed64 = 1,
-    length_delimited = 2,
-    start_group = 3,
-    end_group = 4,
-    fixed32 = 5,
+    VARINT = 0,
+    I64 = 1,
+    LEN = 2,
+    SGROUP = 3,
+    EGROUP = 4,
+    I32 = 5,
 };
