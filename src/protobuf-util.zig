@@ -16,6 +16,7 @@ const FieldDescriptor = types.FieldDescriptor;
 const FieldDescriptorProto = types.FieldDescriptorProto;
 const BinaryData = types.BinaryData;
 const String = types.String;
+const Key = types.Key;
 const virt_reader = @import("virtual-reader.zig");
 const common = @import("common.zig");
 const ptrAlignCast = common.ptrAlignCast;
@@ -40,27 +41,44 @@ pub const Error = std.mem.Allocator.Error ||
     std.fs.File.WriteFileError ||
     LocalError;
 
-pub const Key = struct {
-    wire_type: WireType,
-    field_id: usize,
-    pub inline fn encode(key: Key) usize {
-        return (key.field_id << 3) | @enumToInt(key.wire_type);
+/// a version of std.leb.readULEB128 that breaks on overflow
+/// Read a single unsigned LEB128 value from the given reader as type T,
+/// or error.Overflow if the value cannot fit.
+pub fn readULEB128(comptime T: type, reader: anytype) !T {
+    const U = if (@typeInfo(T).Int.bits < 8) u8 else T;
+    const ShiftT = std.math.Log2Int(U);
+
+    const max_group = (@typeInfo(U).Int.bits + 6) / 7;
+
+    var value = @as(U, 0);
+    var group = @as(ShiftT, 0);
+
+    while (group < max_group) : (group += 1) {
+        const byte = try reader.readByte();
+
+        const ov = @shlWithOverflow(@as(U, byte & 0x7f), group * 7);
+        if (ov[1] != 0) break;
+
+        value |= ov[0];
+        if (byte & 0x80 == 0) break;
+    } else {
+        return error.Overflow;
     }
-    pub fn init(wire_type: WireType, field_id: usize) Key {
-        return .{
-            .wire_type = wire_type,
-            .field_id = field_id,
-        };
+
+    // only applies in the case that we extended to u8
+    if (U != T) {
+        if (value > std.math.maxInt(T)) return error.Overflow;
     }
-};
+
+    return @truncate(T, value);
+}
 
 // Reads a varint from the reader and returns the value, eos (end of steam) pair.
 // `mode = .sint` should used for sint32 and sint64 decoding when expecting lots of negative numbers as it
 // uses zig zag encoding to reduce the size of negative values. negatives encoded otherwise (with `mode = .int`)
 // will require extra size (10 bytes each) and are inefficient.
 pub fn readVarint128(comptime T: type, reader: anytype, mode: IntMode) !T {
-    const U = std.meta.Int(.unsigned, @bitSizeOf(T));
-    var value = @bitCast(T, try std.leb.readULEB128(U, reader));
+    var value = try readULEB128(T, reader);
 
     if (mode == .sint) {
         const S = std.meta.Int(.signed, @bitSizeOf(T));
@@ -251,14 +269,13 @@ pub const Protobuf = struct {
         prefix_len: usize = 0,
 
         pub fn readVarint128(sm: ScannedMember, comptime T: type, mode: IntMode) !T {
-            var ctxfbs = std.io.fixedBufferStream(sm.data);
-            return pbutil.readVarint128(T, ctxfbs.reader(), mode);
+            var stream = std.io.fixedBufferStream(sm.data);
+            return pbutil.readVarint128(T, stream.reader(), mode);
         }
 
         fn maxB128Numbers(data: []const u8) usize {
             var result: usize = 0;
             for (data) |c| result += @boolToInt(c & 0x80 == 0);
-            // std.log.info("maxB128Numbers {b:0>8} result {}", .{ data, result });
             return result;
         }
 
@@ -448,6 +465,7 @@ pub const Protobuf = struct {
                     try listAppend(ctx.alloc, member, ListMut(i32), int);
                 } else mem.writeIntLittle(i32, member[0..4], int);
             },
+            .TYPE_BOOL => mem.writeIntLittle(u8, member[0..1], scanned_member.data[0]),
             .TYPE_STRING => {
                 if (wire_type != .LEN)
                     return error.FieldMissing;
@@ -500,8 +518,15 @@ pub const Protobuf = struct {
     }
 
     fn parseMember(scanned_member: ScannedMember, message: *Message, ctx: *Ctx) !void {
-        const field = scanned_member.field orelse
-            todo("unknown field", .{});
+        const field = scanned_member.field orelse {
+            var ufield = try ctx.alloc.create(types.MessageUnknownField);
+            ufield.* = .{
+                .key = scanned_member.key,
+                .data = String.init(try ctx.alloc.dupe(u8, scanned_member.data)),
+            };
+            message.unknown_fields.appendAssumeCapacity(ufield);
+            return;
+        };
 
         std.log.debug("parseMember() '{s}' .{s} .{s} ", .{ field.name.slice(), @tagName(field.label), @tagName(field.type) });
         var member = structMemberP(message, field.offset);
@@ -546,7 +571,6 @@ pub const Protobuf = struct {
             desc.sizeof_message,
             ctx.data.len,
         });
-        std.log.debug("(init) message is_init={}", .{message.isInit()});
         if (!message.isInit()) {
             if (desc.message_init) |initfn| {
                 initfn(buf.ptr, buf.len);
@@ -581,11 +605,10 @@ pub const Protobuf = struct {
                 }
             } else mfield = last_field;
 
-            const field = mfield orelse todo("handle field not found", .{});
-            if (field.label == .LABEL_REQUIRED)
+            if (mfield) |field| if (field.label == .LABEL_REQUIRED)
                 todo("requiredFieldBitmapSet(last_field_index)", .{});
 
-            var sm: ScannedMember = .{ .key = key, .field = field, .data = ctx.data };
+            var sm: ScannedMember = .{ .key = key, .field = mfield, .data = ctx.data };
 
             switch (key.wire_type) {
                 .VARINT => {
@@ -620,17 +643,18 @@ pub const Protobuf = struct {
                 },
             }
 
-            std.log.info("(scan) field {s}.{s} (+0x{x}/{}={})", .{ desc.name.slice(), field.name.slice(), field.offset, field.offset, ptrfmt(buf.ptr + field.offset) });
-
-            if (field.label == .LABEL_REPEATED) {
-                // list ele type doesn't matter, just want to change len
-                const list = structMemberPtr(ListMut(u8), message, field.offset);
-                if (key.wire_type == .LEN and
-                    (flagsContain(field.flags, FieldFlag.FLAG_PACKED) or isPackableType(field.type)))
-                {
-                    list.len += try sm.countPackedElements(field.type);
-                } else list.len += 1;
-            }
+            if (mfield) |field| {
+                std.log.info("(scan) field {s}.{s} (+0x{x}/{}={})", .{ desc.name.slice(), field.name.slice(), field.offset, field.offset, ptrfmt(buf.ptr + field.offset) });
+                if (field.label == .LABEL_REPEATED) {
+                    // list ele type doesn't matter, just want to change len
+                    const list = structMemberPtr(ListMut(u8), message, field.offset);
+                    if (key.wire_type == .LEN and
+                        (flagsContain(field.flags, FieldFlag.FLAG_PACKED) or isPackableType(field.type)))
+                    {
+                        list.len += try sm.countPackedElements(field.type);
+                    } else list.len += 1;
+                }
+            } else std.log.info("(scan) field {s} unknown", .{desc.name.slice()});
             try scanned_members.append(ctx.alloc, sm);
         }
 
@@ -652,6 +676,9 @@ pub const Protobuf = struct {
             }
         }
         assert(ctx.data.len == 0);
+        if (n_unknown > 0) {
+            try message.unknown_fields.ensureTotalCapacity(ctx.alloc, n_unknown);
+        }
         for (scanned_members.items) |sm| {
             try parseMember(sm, message, ctx);
         }

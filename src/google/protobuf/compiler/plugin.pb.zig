@@ -433,9 +433,7 @@ pub const MessageDescriptor = extern struct {
 };
 
 pub const MessageUnknownField = extern struct {
-    tag: u32 = 0,
-    wire_type: WireType = undefined,
-    len: usize = 0,
+    key: types.Key,
     data: String = String.initEmpty(),
 };
 

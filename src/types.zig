@@ -25,3 +25,17 @@ pub const WireType = enum(u8) {
     EGROUP = 4,
     I32 = 5,
 };
+
+pub const Key = extern struct {
+    wire_type: WireType,
+    field_id: usize,
+    pub inline fn encode(key: Key) usize {
+        return (key.field_id << 3) | @enumToInt(key.wire_type);
+    }
+    pub fn init(wire_type: WireType, field_id: usize) Key {
+        return .{
+            .wire_type = wire_type,
+            .field_id = field_id,
+        };
+    }
+};
