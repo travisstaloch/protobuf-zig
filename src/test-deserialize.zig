@@ -1,4 +1,5 @@
 const std = @import("std");
+const mem = std.mem;
 const testing = std.testing;
 
 const pb = @import("protobuf-util.zig");
@@ -10,9 +11,9 @@ const CodeGeneratorRequest = types.CodeGeneratorRequest;
 const FieldDescriptorProto = types.FieldDescriptorProto;
 const Key = types.Key;
 
-// const talloc = testing.allocator;
-var tarena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-const talloc = tarena.allocator();
+const talloc = testing.allocator;
+// var tarena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+// const talloc = tarena.allocator();
 
 /// 1. genrate zig-out/bin/protoc-gen-zig by running $ zig build
 /// 2. run the following with a modified $PATH that includes zig-out/bin/
@@ -22,35 +23,40 @@ fn parseWithSystemProtoc(protofile: []const u8) ![]const u8 {
         _ = try std.ChildProcess.exec(.{ .allocator = talloc, .argv = &.{ "zig", "build" } });
     }
     var envmap = try std.process.getEnvMap(talloc);
+    defer envmap.deinit();
     const path = envmap.get("PATH") orelse unreachable;
     const newpath = try std.mem.concat(talloc, u8, &.{ path, ":zig-out/bin/" });
+    defer talloc.free(newpath);
     try envmap.put("PATH", newpath);
     const r = try std.ChildProcess.exec(.{
         .allocator = talloc,
         .argv = &.{ "protoc", "--zig_out=gen", protofile },
         .env_map = &envmap,
     });
+    talloc.free(r.stdout);
     return r.stderr;
 }
 
-inline fn deserializeHelper(comptime T: type, protofile: []const u8) !*T {
+inline fn deserializeHelper(comptime T: type, protofile: []const u8, alloc: mem.Allocator) !*T {
     const bytes = try parseWithSystemProtoc(protofile);
-    return deserializeBytesHelper(T, bytes);
+    defer alloc.free(bytes);
+    return deserializeBytesHelper(T, bytes, alloc);
 }
-inline fn deserializeBytesHelper(comptime T: type, bytes: []const u8) !*T {
-    var ctx = pb.context(bytes, talloc);
+inline fn deserializeBytesHelper(comptime T: type, bytes: []const u8, alloc: mem.Allocator) !*T {
+    var ctx = pb.context(bytes, alloc);
     const message = try ctx.deserialize(&T.descriptor);
     return try message.as(T);
 }
-inline fn deserializeHexBytesHelper(comptime T: type, hexbytes: []const u8) !*T {
-    var out = try talloc.alloc(u8, hexbytes.len / 2);
+inline fn deserializeHexBytesHelper(comptime T: type, hexbytes: []const u8, alloc: mem.Allocator) !*T {
+    var out = try alloc.alloc(u8, hexbytes.len / 2);
+    defer alloc.free(out);
     const bytes = try std.fmt.hexToBytes(out, hexbytes);
-    return deserializeBytesHelper(T, bytes);
+    return deserializeBytesHelper(T, bytes, alloc);
 }
 
 test "examples/only_enum - system protoc" {
-    // testing.log_level = .info;
-    const req = try deserializeHelper(CodeGeneratorRequest, "examples/only_enum.proto");
+    const req = try deserializeHelper(CodeGeneratorRequest, "examples/only_enum.proto", talloc);
+    defer req.base.deinit(talloc);
     try testing.expectEqual(@as(usize, 1), req.file_to_generate.len);
     try testing.expectEqual(@as(usize, 1), req.file_to_generate.cap);
     try testing.expectEqualStrings("examples/only_enum.proto", req.file_to_generate.items[0].slice());
@@ -74,10 +80,10 @@ test "examples/only_enum - system protoc" {
 }
 
 test "examples/only_enum-1 - no deps" {
-    // testing.log_level = .info;
     // `input` was obtained by running $ zig build -Dhex && script/protoc-capture.sh examples/only_enum-1.proto
     const input = "0a1a6578616d706c65732f6f6e6c795f656e756d2d312e70726f746f1a080803100c180422007a8f010a1a6578616d706c65732f6f6e6c795f656e756d2d312e70726f746f2a140a08536f6d654b696e6412080a044e4f4e4510004a530a061204000004010a080a010c12030000120a0a0a0205001204020004010a0a0a03050001120302050d0a0b0a0405000200120303040d0a0c0a05050002000112030304080a0c0a0505000200021203030b0c620670726f746f33";
-    const req = try deserializeHexBytesHelper(CodeGeneratorRequest, input);
+    const req = try deserializeHexBytesHelper(CodeGeneratorRequest, input, talloc);
+    defer req.base.deinit(talloc);
     try testing.expectEqual(@as(usize, 1), req.file_to_generate.len);
     try testing.expectEqual(@as(usize, 1), req.file_to_generate.cap);
     try testing.expectEqualStrings("examples/only_enum-1.proto", req.file_to_generate.items[0].slice());
@@ -106,6 +112,8 @@ test "examples/only_enum-1 - no deps" {
     try testing.expectEqual(@as(usize, 3), pfscloc.items[5].span.len);
     try testing.expectEqual(@as(usize, 5), pfscloc.items[6].path.len);
     try testing.expectEqual(@as(usize, 3), pfscloc.items[6].span.len);
+
+    std.log.info("req {}", .{req});
 }
 
 fn encodeMessage(comptime parts: anytype) []const u8 {
@@ -149,7 +157,8 @@ test "nested lists" {
             }),
         }),
     });
-    const req = try deserializeBytesHelper(CodeGeneratorRequest, message);
+    const req = try deserializeBytesHelper(CodeGeneratorRequest, message, talloc);
+    defer req.base.deinit(talloc);
     try testing.expectEqual(@as(usize, 1), req.proto_file.len);
     try testing.expectEqual(@as(usize, 1), req.proto_file.items[0].enum_type.len);
     try testing.expectEqual(@as(usize, 1), req.proto_file.items[0].enum_type.items[0].value.len);
@@ -161,7 +170,8 @@ test "examples/only_message - no deps" {
     // testing.log_level = .info;
     // `input` was obtained by running $ zig build -Dhex && script/protoc-capture.sh -I examples/ examples/only_message.proto
     const input = "0a126f6e6c795f6d6573736167652e70726f746f1a080803100c180422007a95020a0f6f6e6c795f656e756d2e70726f746f2a290a08536f6d654b696e6412080a044e4f4e45100012050a0141100112050a0142100212050a014310034ace010a061204000007010a080a010c12030000120a0a0a0205001204020007010a0a0a03050001120302050d0a0b0a0405000200120303040d0a0c0a05050002000112030304080a0c0a0505000200021203030b0c0a0b0a0405000201120304040a0a0c0a05050002010112030404050a0c0a05050002010212030408090a0b0a0405000202120305040a0a0c0a05050002020112030504050a0c0a05050002020212030508090a0b0a0405000203120306040a0a0c0a05050002030112030604050a0c0a0505000203021203060809620670726f746f337ac9030a126f6e6c795f6d6573736167652e70726f746f1a0f6f6e6c795f656e756d2e70726f746f22610a06506572736f6e12120a046e616d6518012001280952046e616d65120e0a0269641802200128055202696412140a05656d61696c1803200128095205656d61696c121d0a046b696e6418042001280e32092e536f6d654b696e6452046b696e644ab6020a06120400000a010a080a010c12030000120a090a02030012030300190a0a0a020400120405000a010a0a0a03040001120305080e0a0b0a040400020012030602120a0c0a05040002000512030602080a0c0a050400020001120306090d0a0c0a05040002000312030610110a300a0404000201120307020f222320556e69717565204944206e756d62657220666f72207468697320706572736f6e2e0a0a0c0a05040002010512030702070a0c0a050400020101120307080a0a0c0a0504000201031203070d0e0a0b0a040400020212030802130a0c0a05040002020512030802080a0c0a050400020201120308090e0a0c0a05040002020312030811120a0b0a040400020312030902140a0c0a050400020306120309020a0a0c0a0504000203011203090b0f0a0c0a0504000203031203091213620670726f746f33";
-    const req = try deserializeHexBytesHelper(CodeGeneratorRequest, input);
+    const req = try deserializeHexBytesHelper(CodeGeneratorRequest, input, talloc);
+    defer req.base.deinit(talloc);
     try testing.expectEqual(@as(usize, 1), req.file_to_generate.len);
     try testing.expectEqualStrings("only_message.proto", req.file_to_generate.items[0].slice());
     const pf = req.proto_file;
@@ -208,7 +218,35 @@ test "examples/only_message - no deps" {
 }
 
 test "examples/all_types - system protoc" {
-    const req = try deserializeHelper(CodeGeneratorRequest, "examples/all_types.proto");
+    const req = try deserializeHelper(CodeGeneratorRequest, "examples/all_types.proto", talloc);
+    defer req.base.deinit(talloc);
     try testing.expectEqual(@as(usize, 1), req.file_to_generate.len);
     try testing.expectEqualStrings("examples/all_types.proto", req.file_to_generate.items[0].slice());
+}
+
+test "message deinit" {
+    const message = comptime encodeMessage(.{
+        Key.init(.LEN, 15), // CodeGeneratorRequest.proto_file
+        lengthEncode(.{
+            Key.init(.LEN, 5), // FileDescriptorProto.enum_type
+            lengthEncode(.{
+                Key.init(.LEN, 2), // EnumDescriptorProto.value
+                lengthEncode(.{
+                    Key.init(.LEN, 1), // EnumValueDescriptorProto.name
+                    lengthEncode(.{"field0"}),
+                    Key.init(.VARINT, 2), // EnumValueDescriptorProto.number
+                    1,
+                }),
+            }),
+            Key.init(.LEN, 12), // FileDescriptorProto.syntax
+            lengthEncode(.{"proto3"}),
+        }),
+    });
+    const req = try deserializeBytesHelper(CodeGeneratorRequest, message, testing.allocator);
+    defer req.base.deinit(testing.allocator);
+}
+
+test "message missing required fields" {
+    const req = deserializeBytesHelper(types.UninterpretedOption.NamePart, "", talloc);
+    try testing.expectError(error.RequiredFieldMissing, req);
 }
