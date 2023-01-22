@@ -13,22 +13,42 @@
 const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
+// TODO move these into single file ie 'protobuf.zig'
 const types = @import("../../../types.zig");
 const common = @import("../../../common.zig");
+const util = @import("../../../protobuf-util.zig");
 const String = types.String;
 const empty_str = types.empty_str;
 const ptrfmt = common.ptrfmt;
+const compileErr = common.compileErr;
+const ptrAlignCast = common.ptrAlignCast;
+const todo = common.todo;
 
 const WireType = types.WireType;
 const BinaryType = types.BinaryType;
 
+/// helper for repeated message types.
+/// checks that T is a pointer to struct and not pointer to String.
+/// returns types.ListTypeMut(T)
 fn ListMut(comptime T: type) type {
-    assert(@typeInfo(T) == .Struct);
-    assert(T != String);
-    return types.ListTypeMut(*T);
+    const tinfo = @typeInfo(T);
+    assert(tinfo == .Pointer);
+    const Child = tinfo.Pointer.child;
+    const cinfo = @typeInfo(Child);
+    assert(cinfo == .Struct);
+    assert(Child != String);
+    return types.ListTypeMut(T);
 }
+
 const List = types.ListType;
-const ListMut1 = types.ListTypeMut;
+
+/// helper for repeated scalar types.
+/// checks that T is a String or other scalar type.
+/// returns types.ListTypeMut(T)
+fn ListMutScalar(comptime T: type) type {
+    assert(T == String or !std.meta.trait.isContainer(T));
+    return types.ListTypeMut(T);
+}
 
 pub const SERVICE_DESCRIPTOR_MAGIC = 0x14159bc3;
 pub const MESSAGE_DESCRIPTOR_MAGIC = 0x28aaeef9;
@@ -39,8 +59,7 @@ pub fn InitBytes(comptime T: type) MessageInit {
     return struct {
         pub fn initBytes(bytes: [*]u8, len: usize) void {
             assert(len == @sizeOf(T));
-            // @memset(bytes, 0, len);
-            var ptr = common.ptrAlignCast(*T, bytes);
+            var ptr = ptrAlignCast(*T, bytes);
             ptr.* = T.init();
         }
     }.initBytes;
@@ -57,85 +76,25 @@ pub fn Init(comptime T: type) fn () T {
     }.init;
 }
 
+pub fn SetPresentField(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T)) void {
+    return struct {
+        const FieldEnum = std.meta.FieldEnum(T);
+        pub fn setPresentField(self: *T, comptime field_enum: std.meta.FieldEnum(T)) void {
+            const tagname = @tagName(field_enum);
+            const name = T.descriptor.name;
+            if (comptime mem.eql(u8, "base", tagname))
+                compileErr("{s}.setPresentField() field_enum == .base", .{name});
+            const field_idx = std.meta.fieldIndex(T, tagname) orelse
+                compileErr("{s}.setPresentField() invalid field name {s}", .{ name, tagname });
+            std.log.info("setPresentField() {s}.{s}:{}", .{ name, @tagName(field_enum), field_idx });
+            self.base.setPresentFieldIndex(field_idx - 1);
+        }
+    }.setPresentField;
+}
+
 const WriteErr = std.fs.File.WriteError;
 pub fn FormatFn(comptime T: type) type {
     return fn (T, comptime []const u8, std.fmt.FormatOptions, anytype) WriteErr!void;
-}
-pub fn Format(comptime T: type) FormatFn(T) {
-    const debug = true;
-    return struct {
-        pub fn format(value: T, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) WriteErr!void {
-            try writer.print("{s} :: ", .{T.descriptor.name.slice()});
-            inline for (std.meta.fields(T)[1..]) |f, i| { // skip base: Message
-
-                // skip if optional field and not present
-                const field_id = T.__field_ids[i];
-                const is_required_or_present_opt =
-                    value.base.isPresent(field_id) orelse true;
-
-                if (is_required_or_present_opt) {
-                    if (i != 0) _ = try writer.write(", ");
-
-                    const info = @typeInfo(f.type);
-                    switch (info) {
-                        .Struct => {
-                            if (T == String) {
-                                if (@field(value, f.name).len > 0) {
-                                    _ = try writer.write(f.name);
-                                    _ = try writer.write(": ");
-                                    try writer.print("{}", .{@field(value, f.name)});
-                                }
-                            } else if (@hasDecl(f.type, "Child")) {
-                                const val = @field(value, f.name);
-                                if (val.len > 0) {
-                                    _ = try writer.write(f.name);
-                                    _ = try writer.write(": ");
-                                    try writer.print("{}", .{val});
-                                }
-                            } else {
-                                _ = try writer.write(f.name);
-                                _ = try writer.write(": ");
-                                try writer.print("{}", .{@field(value, f.name)});
-                            }
-                        },
-                        .Pointer => |ptr| switch (ptr.size) {
-                            .One => if (debug)
-                                try writer.print("{}", .{ptrfmt(@field(value, f.name))})
-                            else
-                                try writer.print("{}", .{@field(value, f.name).*}),
-                            else => |size| if (std.meta.trait.isZigString(f.type))
-                                try writer.print("\"{s}\"", .{@field(value, f.name)})
-                            else if (size == .Many and
-                                info.Pointer.sentinel != null and
-                                info.Pointer.child == u8)
-                            {
-                                const p = @field(value, f.name);
-                                if (@ptrToInt(p) != 0 and p != types.empty_str) {
-                                    _ = try writer.write(f.name);
-                                    _ = try writer.write(": ");
-                                }
-                            } else {
-                                @compileError(std.fmt.comptimePrint(
-                                    "{} {s}",
-                                    .{ size, @typeName(f.type) },
-                                ));
-                            },
-                        },
-                        .Enum => {
-                            _ = try writer.write(f.name);
-                            _ = try writer.write(": ");
-                            try writer.print(".{s}", .{@tagName(@field(value, f.name))});
-                        },
-                        else => {
-                            _ = try writer.write(f.name);
-                            _ = try writer.write(": ");
-                            try writer.print("{}", .{@field(value, f.name)});
-                        },
-                    }
-                }
-            }
-        }
-    }.format;
 }
 
 fn optionalFieldIds(comptime field_descriptors: []const FieldDescriptor) []const c_uint {
@@ -280,10 +239,10 @@ pub const EnumDescriptor = extern struct {
                 const fname = field.name.slice();
                 const tfield = tfields[i];
                 if (field.value != tfield.value)
-                    @compileError(std.fmt.comptimePrint("{s} {s} {} != {}", .{ name, fname, field.value, tfield.value }));
+                    compileErr("{s} {s} {} != {}", .{ name, fname, field.value, tfield.value });
 
                 if (!mem.eql(u8, fname, tfield.name))
-                    @compileError(std.fmt.comptimePrint("{s} {s} != {s}", .{ name, fname, tfield.name }));
+                    compileErr("{s} {s} != {s}", .{ name, fname, tfield.name });
                 // TODO values_by_name
             }
         }
@@ -338,7 +297,7 @@ pub const FieldDescriptor = extern struct {
 
     pub fn getDescriptor(fd: FieldDescriptor, comptime T: type) *const T {
         assert(fd.descriptor != null);
-        return common.ptrAlignCast(*const T, fd.descriptor);
+        return ptrAlignCast(*const T, fd.descriptor);
     }
 };
 
@@ -379,19 +338,23 @@ pub const MessageDescriptor = extern struct {
         assert(field_ids.len == fields.len);
         assert(opt_field_ids.len <= 64);
         comptime {
-            if (!(expected_opt_field_ids.len == opt_field_ids.len and (opt_field_ids.len == 0 or mem.eql(c_uint, opt_field_ids.slice(), &expected_opt_field_ids))))
-                @compileError(std.fmt.comptimePrint(
+            if (!(expected_opt_field_ids.len == opt_field_ids.len and
+                (opt_field_ids.len == 0 or
+                mem.eql(c_uint, opt_field_ids.slice(), &expected_opt_field_ids))))
+                compileErr(
                     "expected len {} got {}\n{any}\n{any}",
                     .{ expected_opt_field_ids.len, opt_field_ids.len, expected_opt_field_ids, opt_field_ids.slice() },
-                ));
+                );
             for (field_ids.slice()) |field_num, i| {
                 const field = fields.items[i];
                 assert(field.id == field_num);
-                if (!(field.id == T.__field_ids[i] or field.id == std.math.maxInt(u32) - T.__field_ids[i])) {
-                    @compileError(std.fmt.comptimePrint(
+                if (!(field.id == T.__field_ids[i] or
+                    field.id == std.math.maxInt(u32) - T.__field_ids[i]))
+                {
+                    compileErr(
                         "field {s} field.id {} != {} expected",
                         .{ field.name, field.id, T.__field_ids[i] },
-                    ));
+                    );
                 }
             }
 
@@ -399,18 +362,38 @@ pub const MessageDescriptor = extern struct {
             assert(sizeof_message == @sizeOf(T));
             const len = @typeInfo(T).Struct.fields.len;
             const ok = len == fields.len + 1;
-            if (!ok) @compileLog(name, fields.len, len);
-            assert(ok);
+            if (!ok) compileErr(
+                "{s} field lengths mismatch. expected '{}' got '{}'",
+                .{ name, len, fields.len },
+            );
             const tfields = std.meta.fields(T);
             assert(mem.eql(u8, tfields[0].name, "base"));
             assert(tfields[0].type == Message);
+            var fields_total_size: usize = @sizeOf(Message);
+            var last_field_offset: usize = @sizeOf(Message);
+            if (!mem.eql(u8, tfields[0].name, "base"))
+                compileErr("{s} missing 'base' field ", .{name});
             for (tfields[1..tfields.len]) |f, i| {
                 if (!mem.eql(u8, f.name, fields.items[i].name.slice()))
-                    @compileError(std.fmt.comptimePrint("{s} {s} != {s}", .{ name, f.name, fields.items[i].name }));
+                    compileErr(
+                        "{s} field name mismatch. expected '{s}' got '{s}'",
+                        .{ name, f.name, fields.items[i].name },
+                    );
                 const expected_offset = @offsetOf(T, f.name);
                 if (expected_offset != fields.items[i].offset)
-                    @compileError(std.fmt.comptimePrint("{s} offset {} != {}", .{ name, expected_offset, fields.items[i].offset }));
+                    compileErr(
+                        "{s} offset mismatch expected '{}' got '{}'",
+                        .{ name, expected_offset, fields.items[i].offset },
+                    );
+                fields_total_size += expected_offset - last_field_offset;
+                last_field_offset = expected_offset;
             }
+            fields_total_size += sizeof_message - fields.items[fields.len - 1].offset;
+            if (fields_total_size != sizeof_message)
+                compileErr(
+                    "{s} size mismatch expected {} but fields total calculated size is {}",
+                    .{ name, sizeof_message, fields_total_size },
+                );
         }
 
         return result;
@@ -439,7 +422,7 @@ pub const MessageUnknownField = extern struct {
 
 pub const Message = extern struct {
     descriptor: ?*const MessageDescriptor,
-    unknown_fields: ListMut(MessageUnknownField) = ListMut(MessageUnknownField).initEmpty(),
+    unknown_fields: ListMut(*MessageUnknownField) = ListMut(*MessageUnknownField).initEmpty(),
     optional_fields_present: u64 = 0,
 
     comptime {
@@ -453,22 +436,33 @@ pub const Message = extern struct {
             .descriptor = descriptor,
         };
     }
-    /// returns null when field_id is not an optional field
-    /// returns true/false when field_id is an optional field
-    pub fn isPresent(m: *const Message, field_id: c_uint) ?bool {
+
+    /// returns true when `field_id` is non-optional
+    /// otherwise checks `field_id` is in `m.opt_field_ids`
+    pub fn isPresent(m: *const Message, field_id: c_uint) bool {
         const desc = m.descriptor orelse unreachable;
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse
-            return null;
+            return true;
         return (m.optional_fields_present >> @intCast(u6, opt_field_idx)) & 1 != 0;
     }
-    /// returns error.OptionalFieldNotFound if field_id is a non optional field
-    pub fn setPresent(m: *Message, field_id: c_uint) !void {
-        const desc = m.descriptor orelse unreachable;
-        const opt_field_idx = desc.optionalFieldIndex(field_id) orelse
-            return error.OptionalFieldMissing;
+
+    /// mark `m.optional_fields_present` at the field index corresponding to
+    /// if `field_id` is a non optional field
+    pub fn setPresent(m: *Message, field_id: c_uint) void {
+        const desc = m.descriptor orelse
+            @panic("called setPresent() on a message with no descriptor.");
+        std.log.info("setPresent({}) - {any}", .{ field_id, desc.opt_field_ids });
+        const opt_field_idx = desc.optionalFieldIndex(field_id) orelse return;
         std.log.debug("setPresent 1 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
         m.optional_fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx);
         std.log.debug("setPresent 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
+    }
+
+    pub fn setPresentFieldIndex(m: *Message, field_index: usize) void {
+        const desc = m.descriptor orelse
+            @panic("called setPresentFieldIndex() on a message with no descriptor.");
+        std.log.info("setPresentFieldIndex() field_index {} opt_field_ids {any}", .{ field_index, desc.opt_field_ids.slice() });
+        m.setPresent(desc.field_ids.items[field_index]);
     }
 
     /// ptr cast to T. verifies that m.descriptor.name ends with @typeName(T)
@@ -478,6 +472,155 @@ pub const Message = extern struct {
             return error.TypeMismatch;
         }
         return @ptrCast(*T, m);
+    }
+
+    pub fn formatMessage(message: *const Message, writer: anytype) WriteErr!void {
+        const desc = message.descriptor orelse unreachable;
+        try writer.print("{s}{{", .{desc.name.slice()});
+        const fields = desc.fields;
+        const bytes = @ptrCast([*]const u8, message);
+        for (fields.slice()) |f, i| {
+            const member = bytes + f.offset;
+            const field_id = desc.field_ids.items[i];
+            // skip if optional field and not present
+            const field_name = f.name.slice();
+            if (message.isPresent(field_id)) {
+                switch (f.type) {
+                    .TYPE_MESSAGE => {
+                        if (f.label == .LABEL_REPEATED) {
+                            const list = ptrAlignCast(*const ListMut(*Message), member);
+                            if (list.len == 0) continue; // prevent extra commas
+                            try writer.print(".{s} = &.{{", .{field_name});
+                            for (list.slice()) |it, j| {
+                                if (j != 0) _ = try writer.write(", ");
+                                try Message.formatMessage(it, writer);
+                            }
+                            _ = try writer.write("}");
+                        } else {
+                            try writer.print(".{s} = ", .{field_name});
+                            try Message.formatMessage(ptrAlignCast(*const Message, member), writer);
+                        }
+                    },
+                    .TYPE_STRING => {
+                        if (f.label == .LABEL_REPEATED) {
+                            const list = ptrAlignCast(*const ListMutScalar(String), member);
+                            if (list.len == 0) continue; // prevent extra commas
+                            try writer.print(".{s} = &.{{", .{field_name});
+                            for (list.slice()) |it, j| {
+                                if (j != 0) _ = try writer.write(", ");
+                                try writer.print("{}", .{it});
+                            }
+                            _ = try writer.write("}");
+                        } else try writer.print(".{s} = {}", .{ field_name, ptrAlignCast(*const String, member).* });
+                    },
+                    .TYPE_BOOL => {
+                        if (f.label == .LABEL_REPEATED) todo("format repeated bool", .{});
+                        try writer.print(".{s} = {}", .{ field_name, member[0] });
+                    },
+                    .TYPE_INT32 => {
+                        if (f.label == .LABEL_REPEATED) {
+                            const list = ptrAlignCast(*const ListMutScalar(i32), member);
+                            if (list.len == 0) continue; // prevent extra commas
+                            try writer.print(".{s} = &.{{", .{field_name});
+                            for (list.slice()) |it, j| {
+                                if (j != 0) _ = try writer.write(", ");
+                                try writer.print("{}", .{it});
+                            }
+                            _ = try writer.write("}");
+                        } else try writer.print(".{s} = {}", .{ field_name, @bitCast(i32, member[0..4].*) });
+                    },
+                    else => {
+                        todo(".{s} .{s}", .{ @tagName(f.type), @tagName(f.label) });
+                    },
+                }
+                if (i != fields.len - 1) _ = try writer.write(", ");
+            }
+        }
+        _ = try writer.write("}");
+    }
+
+    pub fn deinit(m: *Message, allocator: mem.Allocator) void {
+        deinitImpl(m, allocator, .all_fields);
+    }
+
+    fn isPointerField(f: FieldDescriptor) bool {
+        return f.label == .LABEL_REPEATED or f.type == .TYPE_STRING;
+    }
+
+    fn deinitImpl(
+        m: *Message,
+        allocator: mem.Allocator,
+        mode: enum { all_fields, only_pointer_fields },
+    ) void {
+        const bytes = @ptrCast([*]u8, m);
+        const desc = m.descriptor orelse
+            std.debug.panic("can't deinit a message with no descriptor.", .{});
+
+        std.log.debug("\ndeinit message {s}{}-{} size={}", .{ desc.name.slice(), ptrfmt(m), ptrfmt(bytes + desc.sizeof_message), desc.sizeof_message });
+
+        for (desc.fields.slice()) |field| {
+            if (mode == .only_pointer_fields and !isPointerField(field))
+                continue;
+            if (field.label == .LABEL_REPEATED) {
+                if (field.type == .TYPE_STRING) {
+                    const L = ListMutScalar(String);
+                    var list = ptrAlignCast(*L, bytes + field.offset);
+                    if (list.len != 0) {
+                        std.log.debug("deinit {s}.{s} repeated string field len {}", .{ desc.name.slice(), field.name.slice(), list.len });
+                        for (list.slice()) |s|
+                            s.deinit(allocator);
+                        list.deinit(allocator);
+                    }
+                } else if (field.type == .TYPE_MESSAGE) {
+                    const L = ListMut(*Message);
+                    var list = ptrAlignCast(*L, bytes + field.offset);
+                    if (list.len != 0) {
+                        std.log.debug(
+                            "deinit {s}.{s} repeated message field len/cap {}/{}",
+                            .{ desc.name.slice(), field.name.slice(), list.len, list.cap },
+                        );
+                        for (list.slice()) |subm|
+                            deinitImpl(subm, allocator, .all_fields);
+                        list.deinit(allocator);
+                    }
+                } else {
+                    const size = common.repeatedEleSize(field.type);
+                    const L = ListMutScalar(u8);
+                    var list = ptrAlignCast(*L, bytes + field.offset);
+                    if (list.len != 0) {
+                        std.log.debug(
+                            "deinit {s}.{s} repeated field {s} len {} size {} bytelen {}",
+                            .{ desc.name.slice(), field.name.slice(), @tagName(field.type), list.len, size, size * list.len },
+                        );
+                        allocator.free(list.items[0 .. size * list.cap]);
+                    }
+                }
+            } else if (field.type == .TYPE_MESSAGE) {
+                if (m.isPresent(field.id)) {
+                    std.log.debug("deinit {s}.{s} single message field", .{ desc.name, field.name });
+                    var subm = ptrAlignCast(*Message, bytes + field.offset);
+                    deinitImpl(subm, allocator, .only_pointer_fields);
+                }
+            } else if (field.type == .TYPE_STRING) {
+                var s = ptrAlignCast(*String, bytes + field.offset);
+                if (s.len != 0 and s.items != String.empty.items) {
+                    std.log.debug(
+                        "deinit {s}.{s} single string field {} offset {}",
+                        .{ desc.name.slice(), field.name.slice(), ptrfmt(bytes + field.offset), field.offset },
+                    );
+                    s.deinit(allocator);
+                }
+            }
+        }
+
+        for (m.unknown_fields.slice()) |ufield| {
+            allocator.free(ufield.data.slice());
+            allocator.destroy(ufield);
+        }
+        m.unknown_fields.deinit(allocator);
+
+        if (mode == .all_fields)
+            allocator.free(bytes[0..desc.sizeof_message]);
     }
 };
 
@@ -505,9 +648,36 @@ pub const Message = extern struct {
 //     destroy: ?*const fn ([*c]Service) callconv(.C) void,
 // };
 
+pub fn Format(comptime T: type) FormatFn(T) {
+    return struct {
+        pub fn format(value: T, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) WriteErr!void {
+            try value.base.formatMessage(writer);
+        }
+    }.format;
+}
+
+pub fn MessageMixins(comptime Self: type) type {
+    return struct {
+        pub const init = Init(Self);
+        pub const initBytes = InitBytes(Self);
+        pub const format = Format(Self);
+        pub const setPresentField = SetPresentField(Self);
+        pub const field_ids = fieldIds(&Self.field_descriptors);
+        pub const opt_field_ids = optionalFieldIds(&Self.field_descriptors);
+        pub const descriptor = MessageDescriptor.init(Self);
+    };
+}
+
+pub fn EnumMixins(comptime Self: type) type {
+    return struct {
+        pub const enum_values_by_number = enumValuesByNumber(Self);
+        pub const descriptor = EnumDescriptor.init(Self);
+    };
+}
+
 pub const UninterpretedOption = extern struct {
     base: Message,
-    name: ListMut(NamePart) = ListMut(NamePart).initEmpty(),
+    name: ListMut(*NamePart) = ListMut(*NamePart).initEmpty(),
     identifier_value: String = String.initEmpty(),
     positive_int_value: u64 = 0,
     negative_int_value: i64 = 0,
@@ -515,16 +685,14 @@ pub const UninterpretedOption = extern struct {
     string_value: BinaryData = .{},
     aggregate_value: String = String.initEmpty(),
 
-    pub const init = Init(UninterpretedOption);
-    pub const format = Format(UninterpretedOption);
+    pub usingnamespace MessageMixins(@This());
 
     pub const NamePart = extern struct {
         base: Message,
         name_part: String = String.initEmpty(),
         is_extension: bool = false,
 
-        pub const init = Init(NamePart);
-        pub const format = Format(NamePart);
+        pub usingnamespace MessageMixins(@This());
 
         pub const field_descriptors = [2]FieldDescriptor{
             FieldDescriptor.init(
@@ -548,10 +716,6 @@ pub const UninterpretedOption = extern struct {
         };
         pub const __field_ids = [_]c_uint{ 1, 2 };
         pub const __opt_field_ids = [_]c_uint{};
-
-        pub const field_ids = fieldIds(&@This().field_descriptors);
-        pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-        pub const descriptor = MessageDescriptor.init(@This());
     };
 
     pub const field_descriptors = [7]FieldDescriptor{
@@ -622,9 +786,6 @@ pub const UninterpretedOption = extern struct {
 
     pub const __field_ids = [_]c_uint{ 2, 3, 4, 5, 6, 7, 8 };
     pub const __opt_field_ids = [_]c_uint{ 3, 4, 5, 6, 7, 8 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const FieldOptions = extern struct {
@@ -636,10 +797,9 @@ pub const FieldOptions = extern struct {
     unverified_lazy: bool = false,
     deprecated: bool = false,
     weak: bool = false,
-    uninterpreted_option: ListMut(UninterpretedOption) = ListMut(UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
 
-    pub const init = Init(FieldOptions);
-    pub const format = Format(FieldOptions);
+    pub usingnamespace MessageMixins(@This());
 
     pub const lazy__default_value = @as(c_int, 0);
     pub const unverified_lazy__default_value = @as(c_int, 0);
@@ -653,8 +813,7 @@ pub const FieldOptions = extern struct {
         STRING_PIECE = 2,
 
         pub const default_value: CType = .STRING;
-        pub const enum_values_by_number = enumValuesByNumber(@This());
-        pub const descriptor = EnumDescriptor.init(@This());
+        pub usingnamespace EnumMixins(@This());
     };
 
     const JSType = enum(u8) {
@@ -668,8 +827,7 @@ pub const FieldOptions = extern struct {
         JS_NUMBER = 2,
 
         pub const default_value: JSType = .JS_NORMAL;
-        pub const enum_values_by_number = enumValuesByNumber(@This());
-        const descriptor = EnumDescriptor.init(@This());
+        pub usingnamespace EnumMixins(@This());
     };
 
     pub const field_descriptors = [_]FieldDescriptor{
@@ -748,9 +906,6 @@ pub const FieldOptions = extern struct {
     };
     pub const __field_ids = [_]c_uint{ 1, 2, 6, 5, 15, 3, 10, 999 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 6, 5, 15, 3, 10 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const FieldDescriptorProto = extern struct {
@@ -767,8 +922,7 @@ pub const FieldDescriptorProto = extern struct {
     options: FieldOptions = FieldOptions.init(),
     proto3_optional: bool = false,
 
-    pub const init = Init(FieldDescriptorProto);
-    pub const format = Format(FieldDescriptorProto);
+    pub usingnamespace MessageMixins(@This());
 
     pub const Type = enum(u8) {
         // 0 is reserved for errors.
@@ -803,8 +957,7 @@ pub const FieldDescriptorProto = extern struct {
         TYPE_SINT32 = 17, // Uses ZigZag encoding.
         TYPE_SINT64 = 18, // Uses ZigZag encoding.
 
-        pub const enum_values_by_number = enumValuesByNumber(@This());
-        pub const descriptor = EnumDescriptor.init(@This());
+        pub usingnamespace EnumMixins(@This());
     };
 
     pub const Label = enum(u8) {
@@ -813,8 +966,7 @@ pub const FieldDescriptorProto = extern struct {
         LABEL_REQUIRED = 2,
         LABEL_REPEATED = 3,
 
-        pub const enum_values_by_number = enumValuesByNumber(@This());
-        pub const descriptor = EnumDescriptor.init(@This());
+        pub usingnamespace EnumMixins(@This());
     };
 
     pub const field_descriptors = [_]FieldDescriptor{
@@ -921,18 +1073,15 @@ pub const FieldDescriptorProto = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 3, 4, 5, 6, 2, 7, 9, 10, 8, 17 };
     pub const __opt_field_ids = [_]c_uint{ 1, 3, 4, 5, 6, 2, 7, 9, 10, 8, 17 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const EnumValueOptions = extern struct {
     base: Message,
     deprecated: bool = false,
-    uninterpreted_option: ListMut(UninterpretedOption) = ListMut(UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
 
-    pub const init = Init(EnumValueOptions);
-    pub const format = Format(EnumValueOptions);
+    pub usingnamespace MessageMixins(@This());
+
     pub const deprecated__default_value = false;
     pub const field_descriptors = [2]FieldDescriptor{
         FieldDescriptor.init(
@@ -957,9 +1106,6 @@ pub const EnumValueOptions = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 999 };
     pub const __opt_field_ids = [_]c_uint{1};
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const EnumValueDescriptorProto = extern struct {
@@ -968,8 +1114,7 @@ pub const EnumValueDescriptorProto = extern struct {
     number: i32 = 0,
     options: EnumValueOptions = EnumValueOptions.init(),
 
-    pub const init = Init(EnumValueDescriptorProto);
-    pub const format = Format(EnumValueDescriptorProto);
+    pub usingnamespace MessageMixins(@This());
 
     pub const field_descriptors = [3]FieldDescriptor{
         FieldDescriptor.init(
@@ -1003,19 +1148,16 @@ pub const EnumValueDescriptorProto = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 2, 3 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 3 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const EnumOptions = extern struct {
     base: Message,
     allow_alias: bool = false,
     deprecated: bool = false,
-    uninterpreted_option: ListMut(UninterpretedOption) = ListMut(UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
 
-    pub const init = Init(EnumOptions);
-    pub const format = Format(EnumOptions);
+    pub usingnamespace MessageMixins(@This());
+
     pub const deprecated__default_value = false;
     pub const field_descriptors = [3]FieldDescriptor{
         FieldDescriptor.init(
@@ -1049,29 +1191,25 @@ pub const EnumOptions = extern struct {
 
     pub const __field_ids = [_]c_uint{ 2, 3, 999 };
     pub const __opt_field_ids = [_]c_uint{ 2, 3 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const EnumDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
-    value: ListMut(EnumValueDescriptorProto) = ListMut(EnumValueDescriptorProto).initEmpty(),
+    value: ListMut(*EnumValueDescriptorProto) = ListMut(*EnumValueDescriptorProto).initEmpty(),
     options: EnumOptions = EnumOptions.init(),
-    reserved_range: ListMut(EnumReservedRange) = ListMut(EnumReservedRange).initEmpty(),
-    reserved_name: ListMut1(String) = ListMut1(String).initEmpty(),
+    reserved_range: ListMut(*EnumReservedRange) = ListMut(*EnumReservedRange).initEmpty(),
+    reserved_name: ListMutScalar(String) = ListMutScalar(String).initEmpty(),
 
-    pub const init = Init(EnumDescriptorProto);
-    pub const format = Format(EnumDescriptorProto);
+    pub usingnamespace MessageMixins(@This());
 
     pub const EnumReservedRange = extern struct {
         base: Message,
         start: i32 = 0,
         end: i32 = 0,
 
-        pub const init = Init(EnumReservedRange);
-        pub const format = Format(EnumReservedRange);
+        pub usingnamespace MessageMixins(@This());
+
         pub const field_descriptors = [2]FieldDescriptor{
             FieldDescriptor.init(
                 "start",
@@ -1095,9 +1233,6 @@ pub const EnumDescriptorProto = extern struct {
 
         pub const __field_ids = [_]c_uint{ 1, 2 };
         pub const __opt_field_ids = [_]c_uint{ 1, 2 };
-        pub const field_ids = fieldIds(&@This().field_descriptors);
-        pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-        const descriptor = MessageDescriptor.init(@This());
     };
 
     pub const field_descriptors = [_]FieldDescriptor{
@@ -1150,16 +1285,13 @@ pub const EnumDescriptorProto = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 2, 3, 4, 5 };
     pub const __opt_field_ids = [_]c_uint{ 1, 3 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    pub const descriptor = MessageDescriptor.init(@This());
 };
 pub const ExtensionRangeOptions = extern struct {
     base: Message,
-    uninterpreted_option: ListMut(UninterpretedOption) = ListMut(UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
 
-    pub const init = Init(ExtensionRangeOptions);
-    pub const format = Format(ExtensionRangeOptions);
+    pub usingnamespace MessageMixins(@This());
+
     pub const field_descriptors = [1]FieldDescriptor{
         FieldDescriptor.init(
             "uninterpreted_option",
@@ -1174,16 +1306,12 @@ pub const ExtensionRangeOptions = extern struct {
 
     pub const __field_ids = [_]c_uint{999};
     pub const __opt_field_ids = [_]c_uint{};
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    const descriptor = MessageDescriptor.init(@This());
 };
 pub const OneofOptions = extern struct {
     base: Message,
-    uninterpreted_option: ListMut(UninterpretedOption) = ListMut(UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
 
-    pub const init = Init(OneofOptions);
-    pub const format = Format(OneofOptions);
+    pub usingnamespace MessageMixins(@This());
 
     pub const field_descriptors = [1]FieldDescriptor{
         FieldDescriptor.init(
@@ -1199,17 +1327,14 @@ pub const OneofOptions = extern struct {
 
     pub const __field_ids = [_]c_uint{999};
     pub const __opt_field_ids = [_]c_uint{};
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    const descriptor = MessageDescriptor.init(@This());
 };
 pub const OneofDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
     options: OneofOptions = OneofOptions.init(),
 
-    pub const init = Init(OneofDescriptorProto);
-    pub const format = Format(OneofDescriptorProto);
+    pub usingnamespace MessageMixins(@This());
+
     pub const field_descriptors = [2]FieldDescriptor{
         FieldDescriptor.init(
             "name",
@@ -1233,9 +1358,6 @@ pub const OneofDescriptorProto = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 2 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    const descriptor = MessageDescriptor.init(@This());
 };
 pub const MessageOptions = extern struct {
     base: Message,
@@ -1243,10 +1365,10 @@ pub const MessageOptions = extern struct {
     no_standard_descriptor_accessor: bool = false,
     deprecated: bool = false,
     map_entry: bool = false,
-    uninterpreted_option: ListMut(UninterpretedOption) = ListMut(UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
 
-    pub const init = Init(MessageOptions);
-    pub const format = Format(MessageOptions);
+    pub usingnamespace MessageMixins(@This());
+
     pub const message_set_wire_format__default_value: c_int = 0;
     pub const no_standard_descriptor_accessor__default_value: c_int = 0;
     pub const deprecated__default_value: c_int = 0;
@@ -1300,34 +1422,31 @@ pub const MessageOptions = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 2, 3, 7, 999 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 3, 7 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const DescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
-    field: ListMut(FieldDescriptorProto) = ListMut(FieldDescriptorProto).initEmpty(),
-    extension: ListMut(FieldDescriptorProto) = ListMut(FieldDescriptorProto).initEmpty(),
+    field: ListMut(*FieldDescriptorProto) = ListMut(*FieldDescriptorProto).initEmpty(),
+    extension: ListMut(*FieldDescriptorProto) = ListMut(*FieldDescriptorProto).initEmpty(),
     nested_type: types.ListTypeMut(*DescriptorProto) = .{ .items = types.ListTypeMut(*DescriptorProto).list_sentinel_ptr }, // workaround for 'dependency loop'
-    enum_type: ListMut(EnumDescriptorProto) = ListMut(EnumDescriptorProto).initEmpty(),
-    extension_range: ListMut(ExtensionRange) = ListMut(ExtensionRange).initEmpty(),
-    oneof_decl: ListMut(OneofDescriptorProto) = ListMut(OneofDescriptorProto).initEmpty(),
+    enum_type: ListMut(*EnumDescriptorProto) = ListMut(*EnumDescriptorProto).initEmpty(),
+    extension_range: ListMut(*ExtensionRange) = ListMut(*ExtensionRange).initEmpty(),
+    oneof_decl: ListMut(*OneofDescriptorProto) = ListMut(*OneofDescriptorProto).initEmpty(),
     options: MessageOptions = MessageOptions.init(),
-    reserved_range: ListMut(ReservedRange) = ListMut(ReservedRange).initEmpty(),
-    reserved_name: ListMut1(String) = ListMut1(String).initEmpty(),
+    reserved_range: ListMut(*ReservedRange) = ListMut(*ReservedRange).initEmpty(),
+    reserved_name: ListMutScalar(String) = ListMutScalar(String).initEmpty(),
 
-    pub const init = Init(DescriptorProto);
-    pub const format = Format(DescriptorProto);
+    pub usingnamespace MessageMixins(@This());
+
     pub const ExtensionRange = extern struct {
         base: Message,
         start: i32 = 0,
         end: i32 = 0,
         options: ExtensionRangeOptions = ExtensionRangeOptions.init(),
 
-        pub const init = Init(ExtensionRange);
-        pub const format = Format(ExtensionRange);
+        pub usingnamespace MessageMixins(@This());
+
         pub const field_descriptors = [3]FieldDescriptor{
             FieldDescriptor.init(
                 "start",
@@ -1360,9 +1479,6 @@ pub const DescriptorProto = extern struct {
 
         pub const __field_ids = [_]c_uint{ 1, 2, 3 };
         pub const __opt_field_ids = [_]c_uint{ 1, 2, 3 };
-        pub const field_ids = fieldIds(&@This().field_descriptors);
-        pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-        const descriptor = MessageDescriptor.init(@This());
     };
 
     pub const ReservedRange = extern struct {
@@ -1370,8 +1486,8 @@ pub const DescriptorProto = extern struct {
         start: i32 = 0,
         end: i32 = 0,
 
-        pub const init = Init(ReservedRange);
-        pub const format = Format(ReservedRange);
+        pub usingnamespace MessageMixins(@This());
+
         pub const field_descriptors = [2]FieldDescriptor{
             FieldDescriptor.init(
                 "start",
@@ -1395,9 +1511,6 @@ pub const DescriptorProto = extern struct {
 
         pub const __field_ids = [_]c_uint{ 1, 2 };
         pub const __opt_field_ids = [_]c_uint{ 1, 2 };
-        pub const field_ids = fieldIds(&@This().field_descriptors);
-        pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-        const descriptor = MessageDescriptor.init(@This());
     };
 
     pub const field_descriptors = [_]FieldDescriptor{
@@ -1495,26 +1608,22 @@ pub const DescriptorProto = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 2, 6, 3, 4, 5, 8, 7, 9, 10 };
     pub const __opt_field_ids = [_]c_uint{ 1, 7 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const MethodOptions = extern struct {
     base: Message,
     deprecated: bool = false,
     idempotency_level: IdempotencyLevel = undefined,
-    uninterpreted_option: ListMut(UninterpretedOption) = ListMut(UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
 
-    pub const init = Init(MethodOptions);
-    pub const format = Format(MethodOptions);
+    pub usingnamespace MessageMixins(@This());
+
     pub const IdempotencyLevel = enum(u8) {
         IDEMPOTENCY_UNKNOWN,
         NO_SIDE_EFFECTS,
         IDEMPOTENT,
 
-        pub const enum_values_by_number = enumValuesByNumber(@This());
-        const descriptor = EnumDescriptor.init(@This());
+        pub usingnamespace EnumMixins(@This());
     };
 
     pub const deprecated__default_value: c_uint = 0;
@@ -1551,9 +1660,6 @@ pub const MethodOptions = extern struct {
 
     pub const __field_ids = [_]c_uint{ 33, 34, 999 };
     pub const __opt_field_ids = [_]c_uint{ 33, 34 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const MethodDescriptorProto = extern struct {
@@ -1565,8 +1671,8 @@ pub const MethodDescriptorProto = extern struct {
     client_streaming: bool = false,
     server_streaming: bool = false,
 
-    pub const init = Init(MethodDescriptorProto);
-    pub const format = Format(MethodDescriptorProto);
+    pub usingnamespace MessageMixins(@This());
+
     pub const client_streaming__default_value: c_int = 0;
     pub const server_streaming__default_value: c_int = 0;
     pub const field_descriptors = [6]FieldDescriptor{
@@ -1628,19 +1734,16 @@ pub const MethodDescriptorProto = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 2, 3, 4, 5, 6 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 3, 4, 5, 6 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const ServiceOptions = extern struct {
     base: Message,
     deprecated: bool = false,
-    uninterpreted_option: ListMut(UninterpretedOption) = ListMut(UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
 
     pub const deprecated__default_value: c_int = 0;
-    pub const init = Init(ServiceOptions);
-    pub const format = Format(ServiceOptions);
+    pub usingnamespace MessageMixins(@This());
+
     pub const field_descriptors = [2]FieldDescriptor{
         FieldDescriptor.init(
             "deprecated",
@@ -1664,19 +1767,16 @@ pub const ServiceOptions = extern struct {
 
     pub const __field_ids = [_]c_uint{ 33, 999 };
     pub const __opt_field_ids = [_]c_uint{33};
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const ServiceDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
-    method: ListMut(MethodDescriptorProto) = ListMut(MethodDescriptorProto).initEmpty(),
+    method: ListMut(*MethodDescriptorProto) = ListMut(*MethodDescriptorProto).initEmpty(),
     options: ServiceOptions = ServiceOptions.init(),
 
-    pub const init = Init(ServiceDescriptorProto);
-    pub const format = Format(ServiceDescriptorProto);
+    pub usingnamespace MessageMixins(@This());
+
     pub const field_descriptors = [3]FieldDescriptor{
         FieldDescriptor.init(
             "name",
@@ -1709,9 +1809,6 @@ pub const ServiceDescriptorProto = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 2, 3 };
     pub const __opt_field_ids = [_]c_uint{ 1, 3 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const FileOptions = extern struct {
@@ -1736,10 +1833,9 @@ pub const FileOptions = extern struct {
     php_namespace: String = String.initEmpty(),
     php_metadata_namespace: String = String.initEmpty(),
     ruby_package: String = String.initEmpty(),
-    uninterpreted_option: ListMut(UninterpretedOption) = ListMut(UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
 
-    pub const init = Init(FileOptions);
-    pub const format = Format(FileOptions);
+    pub usingnamespace MessageMixins(@This());
 
     pub const OptimizeMode = enum(u8) {
         NONE = 0,
@@ -1747,8 +1843,7 @@ pub const FileOptions = extern struct {
         CODE_SIZE = 2,
         LITE_RUNTIME = 3,
 
-        pub const enum_values_by_number = enumValuesByNumber(@This());
-        pub const descriptor = EnumDescriptor.init(@This());
+        pub usingnamespace EnumMixins(@This());
     };
     pub const java_multiple_files__default_value: c_int = 0;
     pub const java_string_check_utf8__default_value: c_int = 0;
@@ -1953,29 +2048,23 @@ pub const FileOptions = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 8, 10, 20, 27, 9, 11, 16, 17, 18, 42, 23, 31, 36, 37, 39, 40, 41, 44, 45, 999 };
     pub const __opt_field_ids = [_]c_uint{ 1, 8, 10, 20, 27, 9, 11, 16, 17, 18, 42, 23, 31, 36, 37, 39, 40, 41, 44, 45 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-
-    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const SourceCodeInfo = extern struct {
     base: Message,
-    location: ListMut(Location) = ListMut(Location).initEmpty(),
+    location: ListMut(*Location) = ListMut(*Location).initEmpty(),
 
-    pub const init = Init(SourceCodeInfo);
-    pub const format = Format(SourceCodeInfo);
+    pub usingnamespace MessageMixins(@This());
 
     pub const Location = extern struct {
         base: Message,
-        path: ListMut1(i32) = ListMut1(i32).initEmpty(),
-        span: ListMut1(i32) = ListMut1(i32).initEmpty(),
+        path: ListMutScalar(i32) = ListMutScalar(i32).initEmpty(),
+        span: ListMutScalar(i32) = ListMutScalar(i32).initEmpty(),
         leading_comments: String = String.initEmpty(),
         trailing_comments: String = String.initEmpty(),
-        leading_detached_comments: ListMut1(String) = ListMut1(String).initEmpty(),
+        leading_detached_comments: ListMutScalar(String) = ListMutScalar(String).initEmpty(),
 
-        pub const init = Init(Location);
-        pub const format = Format(Location);
+        pub usingnamespace MessageMixins(@This());
 
         pub const field_descriptors = [5]FieldDescriptor{
             FieldDescriptor.init(
@@ -2027,9 +2116,6 @@ pub const SourceCodeInfo = extern struct {
 
         pub const __field_ids = [_]c_uint{ 1, 2, 3, 4, 6 };
         pub const __opt_field_ids = [_]c_uint{ 3, 4 };
-        pub const field_ids = fieldIds(&@This().field_descriptors);
-        pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-        const descriptor = MessageDescriptor.init(@This());
     };
     pub const field_descriptors = [1]FieldDescriptor{
         FieldDescriptor.init(
@@ -2045,22 +2131,19 @@ pub const SourceCodeInfo = extern struct {
 
     pub const __field_ids = [_]c_uint{1};
     pub const __opt_field_ids = [_]c_uint{};
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const FileDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
     package: String = String.initEmpty(),
-    dependency: ListMut1(String) = ListMut1(String).initEmpty(),
-    public_dependency: ListMut1(i32) = ListMut1(i32).initEmpty(),
-    weak_dependency: ListMut1(i32) = ListMut1(i32).initEmpty(),
-    message_type: ListMut(DescriptorProto) = ListMut(DescriptorProto).initEmpty(),
-    enum_type: ListMut(EnumDescriptorProto) = ListMut(EnumDescriptorProto).initEmpty(),
-    service: ListMut(ServiceDescriptorProto) = ListMut(ServiceDescriptorProto).initEmpty(),
-    extension: ListMut(FieldDescriptorProto) = ListMut(FieldDescriptorProto).initEmpty(),
+    dependency: ListMutScalar(String) = ListMutScalar(String).initEmpty(),
+    public_dependency: ListMutScalar(i32) = ListMutScalar(i32).initEmpty(),
+    weak_dependency: ListMutScalar(i32) = ListMutScalar(i32).initEmpty(),
+    message_type: ListMut(*DescriptorProto) = ListMut(*DescriptorProto).initEmpty(),
+    enum_type: ListMut(*EnumDescriptorProto) = ListMut(*EnumDescriptorProto).initEmpty(),
+    service: ListMut(*ServiceDescriptorProto) = ListMut(*ServiceDescriptorProto).initEmpty(),
+    extension: ListMut(*FieldDescriptorProto) = ListMut(*FieldDescriptorProto).initEmpty(),
     options: FileOptions = FileOptions.init(),
     source_code_info: SourceCodeInfo = SourceCodeInfo.init(),
     syntax: String = String.initEmpty(),
@@ -2073,8 +2156,7 @@ pub const FileDescriptorProto = extern struct {
         assert(@offsetOf(FileDescriptorProto, "enum_type") == 0xa8); //  == 168
     }
 
-    pub const init = Init(FileDescriptorProto);
-    pub const format = Format(FileDescriptorProto);
+    pub usingnamespace MessageMixins(@This());
 
     pub const field_descriptors = [13]FieldDescriptor{
         FieldDescriptor.init(
@@ -2198,17 +2280,13 @@ pub const FileDescriptorProto = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 2, 3, 10, 11, 4, 5, 6, 7, 8, 9, 12, 13 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 8, 9, 12, 13 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const FileDescriptorSet = extern struct {
     base: Message,
-    file: ListMut(FileDescriptorProto) = ListMut(FileDescriptorProto).initEmpty(),
+    file: ListMut(*FileDescriptorProto) = ListMut(*FileDescriptorProto).initEmpty(),
 
-    pub const init = Init(FileDescriptorSet);
-    pub const format = Format(FileDescriptorSet);
+    pub usingnamespace MessageMixins(@This());
 
     pub const field_descriptors = [1]FieldDescriptor{
         FieldDescriptor.init(
@@ -2223,9 +2301,6 @@ pub const FileDescriptorSet = extern struct {
     };
     pub const __field_ids = [_]c_uint{1};
     pub const __opt_field_ids = [_]c_uint{};
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    pub const descriptor = MessageDescriptor.init(@This());
 };
 // pub const GeneratedCodeInfo__Annotation = extern struct {
 //     base: Message,
@@ -2248,8 +2323,7 @@ pub const Version = extern struct {
     patch: i32 = 0,
     suffix: String = String.initEmpty(),
 
-    pub const init = Init(Version);
-    pub const format = Format(Version);
+    pub usingnamespace MessageMixins(@This());
 
     pub const field_descriptors = [4]FieldDescriptor{
         FieldDescriptor.init(
@@ -2292,16 +2366,13 @@ pub const Version = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 2, 3, 4 };
     pub const __opt_field_ids = [_]c_uint{ 1, 2, 3, 4 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 pub const CodeGeneratorRequest = extern struct {
     base: Message,
-    file_to_generate: ListMut1(String) = ListMut1(String).initEmpty(),
+    file_to_generate: ListMutScalar(String) = ListMutScalar(String).initEmpty(),
     parameter: String = String.initEmpty(),
-    proto_file: ListMut(FileDescriptorProto) = ListMut(FileDescriptorProto).initEmpty(),
+    proto_file: ListMut(*FileDescriptorProto) = ListMut(*FileDescriptorProto).initEmpty(),
     compiler_version: Version = Version.init(),
 
     comptime {
@@ -2311,9 +2382,7 @@ pub const CodeGeneratorRequest = extern struct {
         assert(@offsetOf(CodeGeneratorRequest, "proto_file") == 0x50); //  == 80
     }
 
-    pub const init = Init(CodeGeneratorRequest);
-    pub const initBytes = InitBytes(CodeGeneratorRequest);
-    pub const format = Format(CodeGeneratorRequest);
+    pub usingnamespace MessageMixins(@This());
 
     pub const field_descriptors = [4]FieldDescriptor{
         FieldDescriptor.init(
@@ -2356,9 +2425,6 @@ pub const CodeGeneratorRequest = extern struct {
 
     pub const __field_ids = [_]c_uint{ 1, 2, 15, 3 };
     pub const __opt_field_ids = [_]c_uint{ 2, 3 };
-    pub const field_ids = fieldIds(&@This().field_descriptors);
-    pub const opt_field_ids = optionalFieldIds(&@This().field_descriptors);
-    pub const descriptor = MessageDescriptor.init(@This());
 };
 
 // pub const CodeGeneratorResponse__File = extern struct {
