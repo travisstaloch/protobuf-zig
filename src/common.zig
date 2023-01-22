@@ -1,6 +1,7 @@
 const std = @import("std");
 const mem = std.mem;
 const panicf = std.debug.panic;
+const types = @import("types.zig");
 
 pub fn ptrAlign(comptime Ptr: type) comptime_int {
     return @typeInfo(Ptr).Pointer.alignment;
@@ -41,4 +42,32 @@ pub fn splitOn(comptime T: type, s: T, delimiter: std.meta.Child(T)) [2]T {
 }
 pub fn todo(comptime fmt: []const u8, args: anytype) noreturn {
     panicf("TODO " ++ fmt, args);
+}
+pub fn compileErr(comptime fmt: []const u8, args: anytype) noreturn {
+    @compileError(std.fmt.comptimePrint(fmt, args));
+}
+
+pub fn repeatedEleSize(t: types.FieldDescriptorProto.Type) u8 {
+    return switch (t) {
+        .TYPE_SINT32,
+        .TYPE_INT32,
+        .TYPE_UINT32,
+        .TYPE_SFIXED32,
+        .TYPE_FIXED32,
+        .TYPE_FLOAT,
+        .TYPE_ENUM,
+        => 4,
+        .TYPE_SINT64,
+        .TYPE_INT64,
+        .TYPE_UINT64,
+        .TYPE_SFIXED64,
+        .TYPE_FIXED64,
+        .TYPE_DOUBLE,
+        => 8,
+        .TYPE_BOOL => @sizeOf(bool),
+        .TYPE_STRING => @sizeOf(types.String),
+        .TYPE_MESSAGE => @sizeOf(*types.Message),
+        .TYPE_BYTES => @sizeOf(types.BinaryData),
+        .TYPE_ERROR, .TYPE_GROUP => unreachable,
+    };
 }

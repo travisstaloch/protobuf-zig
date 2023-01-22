@@ -30,7 +30,7 @@ pub const LocalError = error{
     NotEnoughBytesRead,
     Overflow,
     FieldMissing,
-    OptionalFieldMissing,
+    RequiredFieldMissing,
     SubMessageMissing,
     DescriptorMissing,
     InvalidType,
@@ -106,7 +106,6 @@ pub fn context(data: []const u8, alloc: Allocator) Protobuf.Ctx {
 
 pub const Protobuf = struct {
     const Ctx = struct {
-        // reader: Reader,
         data: []const u8,
         data_start: []const u8,
         alloc: Allocator,
@@ -262,6 +261,7 @@ pub const Protobuf = struct {
         return error.NotFound;
     }
 
+    // TODO reduce size: make data a [*]const u8, add len: u32, make prefix_len a u32
     const ScannedMember = struct {
         key: Key,
         field: ?*const FieldDescriptor,
@@ -320,31 +320,6 @@ pub const Protobuf = struct {
         }
     };
 
-    fn repeatedEleSize(t: types.FieldDescriptorProto.Type) u8 {
-        return switch (t) {
-            .TYPE_SINT32,
-            .TYPE_INT32,
-            .TYPE_UINT32,
-            .TYPE_SFIXED32,
-            .TYPE_FIXED32,
-            .TYPE_FLOAT,
-            .TYPE_ENUM,
-            => 4,
-            .TYPE_SINT64,
-            .TYPE_INT64,
-            .TYPE_UINT64,
-            .TYPE_SFIXED64,
-            .TYPE_FIXED64,
-            .TYPE_DOUBLE,
-            => 8,
-            .TYPE_BOOL => @sizeOf(bool),
-            .TYPE_STRING => @sizeOf(String),
-            .TYPE_MESSAGE => @sizeOf(*Message),
-            .TYPE_BYTES => @sizeOf(BinaryData),
-            .TYPE_ERROR, .TYPE_GROUP => unreachable,
-        };
-    }
-
     fn flagsContain(flags: anytype, flag: anytype) bool {
         const Set = std.enums.EnumSet(@TypeOf(flag));
         const I = @TypeOf(@as(Set, undefined).bits.mask);
@@ -359,13 +334,6 @@ pub const Protobuf = struct {
 
     fn assertIsMessageDescriptor(desc: *const MessageDescriptor) void {
         assert(desc.magic == types.MESSAGE_DESCRIPTOR_MAGIC);
-    }
-
-    fn requiredFieldBitmapIsSet(index: usize) bool {
-        // (required_fields_bitmap[(index)/8] & (1UL<<((index)%8)))
-        // return
-        _ = index;
-        todo("requiredFieldBitmapIsSet", .{});
     }
 
     fn parsePackedRepeatedMember(scanned_member: ScannedMember, member: [*]u8, _: *Message, ctx: *Ctx) !void {
@@ -410,8 +378,9 @@ pub const Protobuf = struct {
             error.FieldMissing => return,
             else => return err,
         };
-        std.log.debug("parseOptionalMember() setPresent({})", .{scanned_member.field.?.id});
-        try message.setPresent(scanned_member.field.?.id);
+        const field = scanned_member.field orelse unreachable;
+        std.log.info("parseOptionalMember() setPresent({}) - {s}", .{ field.id, field.name });
+        message.setPresent(field.id);
     }
 
     fn parseRepeatedMember(
@@ -438,7 +407,7 @@ pub const Protobuf = struct {
     fn parseRequiredMember(
         scanned_member: ScannedMember,
         member: [*]u8,
-        message: *Message,
+        _: *Message,
         ctx: *Ctx,
         maybe_clear: bool,
     ) !void {
@@ -465,19 +434,18 @@ pub const Protobuf = struct {
                     try listAppend(ctx.alloc, member, ListMut(i32), int);
                 } else mem.writeIntLittle(i32, member[0..4], int);
             },
-            .TYPE_BOOL => mem.writeIntLittle(u8, member[0..1], scanned_member.data[0]),
+            .TYPE_BOOL => member[0] = scanned_member.data[0],
             .TYPE_STRING => {
-                if (wire_type != .LEN)
-                    return error.FieldMissing;
+                if (wire_type != .LEN) return error.FieldMissing;
 
-                const bytes = try ctx.alloc.dupeZ(u8, scanned_member.data);
+                const bytes = try ctx.alloc.dupe(u8, scanned_member.data);
                 if (field.label == .LABEL_REPEATED) {
                     try listAppend(ctx.alloc, member, ListMut(String), String.init(bytes));
                 } else {
-                    var fbs = std.io.fixedBufferStream(member[0..@sizeOf(String)]);
-                    try fbs.writer().writeStruct(String.init(bytes));
+                    var s = ptrAlignCast(*String, member);
+                    s.* = String.init(bytes);
                 }
-                std.log.info("{s}: '{s}'", .{ field.name.slice(), bytes.ptr });
+                std.log.info("{s}: '{s}' {}", .{ field.name.slice(), bytes, ptrfmt(bytes.ptr) });
             },
             .TYPE_MESSAGE => {
                 if (wire_type != .LEN)
@@ -494,14 +462,6 @@ pub const Protobuf = struct {
                 var limctx = ctx.withData(scanned_member.data);
                 const field_desc = field.getDescriptor(MessageDescriptor);
                 std.log.debug("sizeof_message {}", .{field_desc.sizeof_message});
-                const member_message = ptrAlignCast(*Message, member);
-                const messagep = @ptrCast([*]u8, message);
-                const offset = (@ptrToInt(member) - @ptrToInt(messagep));
-                assert(field.offset == offset);
-                std.log.debug(
-                    "member_message is_init={} {} message {} offset 0x{x}/{}",
-                    .{ member_message.isInit(), ptrfmt(member_message), ptrfmt(messagep), offset, offset },
-                );
 
                 if (field.label == .LABEL_REPEATED) {
                     std.log.info(".repeated {s} sizeof={}", .{ field_desc.name.slice(), field_desc.sizeof_message });
@@ -509,7 +469,7 @@ pub const Protobuf = struct {
                     try listAppend(ctx.alloc, member, ListMut(*Message), subm);
                 } else {
                     std.log.info(".single {s} sizeof={}", .{ field_desc.name.slice(), field_desc.sizeof_message });
-                    var buf = member[0..field_desc.sizeof_message];
+                    const buf = member[0..field_desc.sizeof_message];
                     _ = try deserializeTo(buf, field_desc, &limctx);
                 }
             },
@@ -548,6 +508,7 @@ pub const Protobuf = struct {
     pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
         var buf = try ctx.alloc.alignedAlloc(u8, common.ptrAlign(*Message), desc.sizeof_message);
         const m = ptrAlignCast(*Message, buf.ptr);
+        errdefer m.deinit(ctx.alloc);
         m.descriptor = null; // make sure uninit
         return deserializeTo(buf, desc, ctx);
     }
@@ -557,7 +518,9 @@ pub const Protobuf = struct {
         var tmpbuf: if (show_summary) [mem.page_size]u8 else void = undefined;
 
         var last_field: ?*const FieldDescriptor = &desc.fields.items[0];
-        // var last_field_index: usize = 0;
+        var last_field_index: u7 = 0;
+        // TODO make this dynamic
+        var required_fields_bitmap = std.StaticBitSet(128).initEmpty();
         var n_unknown: u32 = 0;
         assertIsMessageDescriptor(desc);
         var message = ptrAlignCast(*Message, buf.ptr);
@@ -581,7 +544,10 @@ pub const Protobuf = struct {
         }
 
         if (show_summary) mem.copy(u8, &tmpbuf, buf);
+        var sfa = std.heap.stackFallback(@sizeOf(ScannedMember) * 16, ctx.alloc);
+        const sfalloc = sfa.get();
         var scanned_members: std.ArrayListUnmanaged(ScannedMember) = .{};
+        defer scanned_members.deinit(sfalloc);
         while (true) {
             const key = ctx.readKey() catch |e| switch (e) {
                 error.EndOfStream => break,
@@ -597,7 +563,7 @@ pub const Protobuf = struct {
                     std.log.debug("(scan) found field_id={} at index={}", .{ key.field_id, field_index });
                     mfield = &desc.fields.items[field_index];
                     last_field = mfield;
-                    // last_field_index = field_index;
+                    last_field_index = @intCast(u7, field_index);
                 } else |_| {
                     std.log.debug("(scan) field_id {} not found", .{key.field_id});
                     mfield = null;
@@ -605,8 +571,11 @@ pub const Protobuf = struct {
                 }
             } else mfield = last_field;
 
-            if (mfield) |field| if (field.label == .LABEL_REQUIRED)
-                todo("requiredFieldBitmapSet(last_field_index)", .{});
+            if (mfield) |field| {
+                if (field.label == .LABEL_REQUIRED)
+                    // TODO create and use message.requiredFieldIndex(field_index)
+                    required_fields_bitmap.set(last_field_index);
+            }
 
             var sm: ScannedMember = .{ .key = key, .field = mfield, .data = ctx.data };
 
@@ -655,16 +624,21 @@ pub const Protobuf = struct {
                     } else list.len += 1;
                 }
             } else std.log.info("(scan) field {s} unknown", .{desc.name.slice()});
-            try scanned_members.append(ctx.alloc, sm);
+            std.log.info("scanned_members.append()", .{});
+            try scanned_members.append(sfalloc, sm);
         }
 
-        for (desc.fields.slice()) |field| {
+        var missing_any_required = false;
+        for (desc.fields.slice()) |field, i| {
             if (field.label == .LABEL_REPEATED) {
-                const size = repeatedEleSize(field.type);
-                // use ListMut(u8) because list ele type doesn't matter, just want to change len
+                const size = common.repeatedEleSize(field.type);
+                // list ele type doesn't matter, just want to change len
                 const list = structMemberPtr(ListMut(u8), message, field.offset);
                 if (list.len != 0) {
-                    std.log.info("(scan) field '{s}' - allocating {}={}*{} list bytes", .{ field.name.slice(), size * list.len, size, list.len });
+                    std.log.info(
+                        "(scan) field '{s}' - allocating {}={}*{} list bytes",
+                        .{ field.name.slice(), size * list.len, size, list.len },
+                    );
                     // TODO CLEAR_REMAINING_N_PTRS
                     var bytes = try ctx.alloc.alloc(u8, size * list.len);
                     list.items = bytes.ptr;
@@ -672,16 +646,25 @@ pub const Protobuf = struct {
                     list.len = 0;
                 }
             } else if (field.label == .LABEL_REQUIRED) {
-                // TODO verify REQUIRED_FIELD_BITMAP_IS_SET for this field
+                if (field.default_value == null and !required_fields_bitmap.isSet(i)) {
+                    std.log.err(
+                        "message '{s}': missing required field '{s}'",
+                        .{ desc.name, field.name },
+                    );
+                    missing_any_required = true;
+                }
             }
         }
+        if (missing_any_required) return error.RequiredFieldMissing;
         assert(ctx.data.len == 0);
-        if (n_unknown > 0) {
+
+        if (n_unknown > 0)
             try message.unknown_fields.ensureTotalCapacity(ctx.alloc, n_unknown);
-        }
-        for (scanned_members.items) |sm| {
+
+        for (scanned_members.items) |sm|
             try parseMember(sm, message, ctx);
-        }
+
+        assert(message.unknown_fields.len == message.unknown_fields.cap);
 
         if (show_summary) {
             std.log.info("\n   --- summary for {s} ---", .{desc.name});
