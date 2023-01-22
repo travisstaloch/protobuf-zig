@@ -647,8 +647,8 @@ pub const Protobuf = struct {
                 }
             } else if (field.label == .LABEL_REQUIRED) {
                 if (field.default_value == null and !required_fields_bitmap.isSet(i)) {
-                    std.log.err(
-                        "message '{s}': missing required field '{s}'",
+                    std.log.warn(
+                        "message {s}: missing required field {s}",
                         .{ desc.name, field.name },
                     );
                     missing_any_required = true;

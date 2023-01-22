@@ -18,12 +18,15 @@ jobs:
 #        submodules: recursive
 #        fetch-depth: 0
 
+    - name: Install Protoc
+      run: sudo apt-get install -y protobuf-compiler
+
     - name: Setup Zig
       uses: goto-bus-stop/setup-zig@v1.3.0
       with:
         version: master
         # version: 0.10.0
 
- #   - run: zig build test
+    - run: zig build test
     - run: zig build
  
