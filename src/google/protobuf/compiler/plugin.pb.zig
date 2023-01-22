@@ -331,48 +331,27 @@ pub const MessageDescriptor = extern struct {
             .message_init = InitBytes(T),
         };
         // TODO - audit and remove unnecessary checks
-        const fields = result.fields;
-        const field_ids = result.field_ids;
-        const opt_field_ids = result.opt_field_ids;
-        const expected_opt_field_ids = T.__opt_field_ids;
-        assert(field_ids.len == fields.len);
-        assert(opt_field_ids.len <= 64);
         comptime {
-            if (!(expected_opt_field_ids.len == opt_field_ids.len and
-                (opt_field_ids.len == 0 or
-                mem.eql(c_uint, opt_field_ids.slice(), &expected_opt_field_ids))))
-                compileErr(
-                    "expected len {} got {}\n{any}\n{any}",
-                    .{ expected_opt_field_ids.len, opt_field_ids.len, expected_opt_field_ids, opt_field_ids.slice() },
-                );
-            for (field_ids.slice()) |field_num, i| {
-                const field = fields.items[i];
-                assert(field.id == field_num);
-                if (!(field.id == T.__field_ids[i] or
-                    field.id == std.math.maxInt(u32) - T.__field_ids[i]))
-                {
-                    compileErr(
-                        "field {s} field.id {} != {} expected",
-                        .{ field.name, field.id, T.__field_ids[i] },
-                    );
-                }
-            }
+            const fields = result.fields;
+            const field_ids = result.field_ids;
+            const opt_field_ids = result.opt_field_ids;
+            assert(field_ids.len == fields.len);
+            assert(opt_field_ids.len <= 64);
 
             const sizeof_message = result.sizeof_message;
             assert(sizeof_message == @sizeOf(T));
             const len = @typeInfo(T).Struct.fields.len;
-            const ok = len == fields.len + 1;
-            if (!ok) compileErr(
+            if (len != fields.len + 1) compileErr(
                 "{s} field lengths mismatch. expected '{}' got '{}'",
                 .{ name, len, fields.len },
             );
             const tfields = std.meta.fields(T);
-            assert(mem.eql(u8, tfields[0].name, "base"));
-            assert(tfields[0].type == Message);
             var fields_total_size: usize = @sizeOf(Message);
             var last_field_offset: usize = @sizeOf(Message);
             if (!mem.eql(u8, tfields[0].name, "base"))
                 compileErr("{s} missing 'base' field ", .{name});
+            if (tfields[0].type != Message)
+                compileErr("{s} 'base' field expected 'Message' type. got '{s}'.", .{@typeName(tfields[0].type)});
             for (tfields[1..tfields.len]) |f, i| {
                 if (!mem.eql(u8, f.name, fields.items[i].name.slice()))
                     compileErr(
@@ -714,8 +693,6 @@ pub const UninterpretedOption = extern struct {
                 null,
             ),
         };
-        pub const __field_ids = [_]c_uint{ 1, 2 };
-        pub const __opt_field_ids = [_]c_uint{};
     };
 
     pub const field_descriptors = [7]FieldDescriptor{
@@ -783,9 +760,6 @@ pub const UninterpretedOption = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 2, 3, 4, 5, 6, 7, 8 };
-    pub const __opt_field_ids = [_]c_uint{ 3, 4, 5, 6, 7, 8 };
 };
 
 pub const FieldOptions = extern struct {
@@ -904,8 +878,6 @@ pub const FieldOptions = extern struct {
             null,
         ),
     };
-    pub const __field_ids = [_]c_uint{ 1, 2, 6, 5, 15, 3, 10, 999 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 2, 6, 5, 15, 3, 10 };
 };
 
 pub const FieldDescriptorProto = extern struct {
@@ -1070,9 +1042,6 @@ pub const FieldDescriptorProto = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 3, 4, 5, 6, 2, 7, 9, 10, 8, 17 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 3, 4, 5, 6, 2, 7, 9, 10, 8, 17 };
 };
 
 pub const EnumValueOptions = extern struct {
@@ -1103,9 +1072,6 @@ pub const EnumValueOptions = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 999 };
-    pub const __opt_field_ids = [_]c_uint{1};
 };
 
 pub const EnumValueDescriptorProto = extern struct {
@@ -1145,9 +1111,6 @@ pub const EnumValueDescriptorProto = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 2, 3 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 2, 3 };
 };
 
 pub const EnumOptions = extern struct {
@@ -1188,9 +1151,6 @@ pub const EnumOptions = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 2, 3, 999 };
-    pub const __opt_field_ids = [_]c_uint{ 2, 3 };
 };
 
 pub const EnumDescriptorProto = extern struct {
@@ -1230,9 +1190,6 @@ pub const EnumDescriptorProto = extern struct {
                 null,
             ),
         };
-
-        pub const __field_ids = [_]c_uint{ 1, 2 };
-        pub const __opt_field_ids = [_]c_uint{ 1, 2 };
     };
 
     pub const field_descriptors = [_]FieldDescriptor{
@@ -1282,9 +1239,6 @@ pub const EnumDescriptorProto = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 2, 3, 4, 5 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 3 };
 };
 pub const ExtensionRangeOptions = extern struct {
     base: Message,
@@ -1303,9 +1257,6 @@ pub const ExtensionRangeOptions = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{999};
-    pub const __opt_field_ids = [_]c_uint{};
 };
 pub const OneofOptions = extern struct {
     base: Message,
@@ -1324,9 +1275,6 @@ pub const OneofOptions = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{999};
-    pub const __opt_field_ids = [_]c_uint{};
 };
 pub const OneofDescriptorProto = extern struct {
     base: Message,
@@ -1355,9 +1303,6 @@ pub const OneofDescriptorProto = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 2 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 2 };
 };
 pub const MessageOptions = extern struct {
     base: Message,
@@ -1419,9 +1364,6 @@ pub const MessageOptions = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 2, 3, 7, 999 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 2, 3, 7 };
 };
 
 pub const DescriptorProto = extern struct {
@@ -1476,9 +1418,6 @@ pub const DescriptorProto = extern struct {
                 null,
             ),
         };
-
-        pub const __field_ids = [_]c_uint{ 1, 2, 3 };
-        pub const __opt_field_ids = [_]c_uint{ 1, 2, 3 };
     };
 
     pub const ReservedRange = extern struct {
@@ -1508,9 +1447,6 @@ pub const DescriptorProto = extern struct {
                 null,
             ),
         };
-
-        pub const __field_ids = [_]c_uint{ 1, 2 };
-        pub const __opt_field_ids = [_]c_uint{ 1, 2 };
     };
 
     pub const field_descriptors = [_]FieldDescriptor{
@@ -1605,9 +1541,6 @@ pub const DescriptorProto = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 2, 6, 3, 4, 5, 8, 7, 9, 10 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 7 };
 };
 
 pub const MethodOptions = extern struct {
@@ -1657,9 +1590,6 @@ pub const MethodOptions = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 33, 34, 999 };
-    pub const __opt_field_ids = [_]c_uint{ 33, 34 };
 };
 
 pub const MethodDescriptorProto = extern struct {
@@ -1731,9 +1661,6 @@ pub const MethodDescriptorProto = extern struct {
             &server_streaming__default_value,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 2, 3, 4, 5, 6 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 2, 3, 4, 5, 6 };
 };
 
 pub const ServiceOptions = extern struct {
@@ -1764,9 +1691,6 @@ pub const ServiceOptions = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 33, 999 };
-    pub const __opt_field_ids = [_]c_uint{33};
 };
 
 pub const ServiceDescriptorProto = extern struct {
@@ -1806,9 +1730,6 @@ pub const ServiceDescriptorProto = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 2, 3 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 3 };
 };
 
 pub const FileOptions = extern struct {
@@ -2045,9 +1966,6 @@ pub const FileOptions = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 8, 10, 20, 27, 9, 11, 16, 17, 18, 42, 23, 31, 36, 37, 39, 40, 41, 44, 45, 999 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 8, 10, 20, 27, 9, 11, 16, 17, 18, 42, 23, 31, 36, 37, 39, 40, 41, 44, 45 };
 };
 
 pub const SourceCodeInfo = extern struct {
@@ -2113,9 +2031,6 @@ pub const SourceCodeInfo = extern struct {
                 null,
             ),
         };
-
-        pub const __field_ids = [_]c_uint{ 1, 2, 3, 4, 6 };
-        pub const __opt_field_ids = [_]c_uint{ 3, 4 };
     };
     pub const field_descriptors = [1]FieldDescriptor{
         FieldDescriptor.init(
@@ -2128,9 +2043,6 @@ pub const SourceCodeInfo = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{1};
-    pub const __opt_field_ids = [_]c_uint{};
 };
 
 pub const FileDescriptorProto = extern struct {
@@ -2277,9 +2189,6 @@ pub const FileDescriptorProto = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 2, 3, 10, 11, 4, 5, 6, 7, 8, 9, 12, 13 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 2, 8, 9, 12, 13 };
 };
 
 pub const FileDescriptorSet = extern struct {
@@ -2299,8 +2208,6 @@ pub const FileDescriptorSet = extern struct {
             null,
         ),
     };
-    pub const __field_ids = [_]c_uint{1};
-    pub const __opt_field_ids = [_]c_uint{};
 };
 // pub const GeneratedCodeInfo__Annotation = extern struct {
 //     base: Message,
@@ -2363,9 +2270,6 @@ pub const Version = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 2, 3, 4 };
-    pub const __opt_field_ids = [_]c_uint{ 1, 2, 3, 4 };
 };
 
 pub const CodeGeneratorRequest = extern struct {
@@ -2422,9 +2326,6 @@ pub const CodeGeneratorRequest = extern struct {
             null,
         ),
     };
-
-    pub const __field_ids = [_]c_uint{ 1, 2, 15, 3 };
-    pub const __opt_field_ids = [_]c_uint{ 2, 3 };
 };
 
 // pub const CodeGeneratorResponse__File = extern struct {
