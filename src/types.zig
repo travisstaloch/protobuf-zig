@@ -1,15 +1,12 @@
 const std = @import("std");
-const util = @import("protobuf-util.zig");
 const extern_types = @import("extern-types.zig");
-const segmented_list = @import("extern-segmented-list.zig");
 const plugin = @import("google/protobuf/compiler/plugin.pb.zig");
+const pbtypes = @import("protobuf-types.zig");
+const assert = std.debug.assert;
 
 pub usingnamespace plugin;
+pub usingnamespace pbtypes;
 pub usingnamespace extern_types;
-pub usingnamespace segmented_list;
-
-pub const ListTypeMut = extern_types.ArrayListMut;
-pub const ListType = extern_types.ArrayList;
 
 pub fn IntegerBitset(comptime len: usize) type {
     const n = @max(8, std.math.ceilPowerOfTwo(usize, @max(len, 1)) catch unreachable);
@@ -39,3 +36,24 @@ pub const Key = extern struct {
         };
     }
 };
+
+/// helper for repeated message types.
+/// checks that T is a pointer to struct and not pointer to String.
+/// returns types.ListTypeMut(T)
+pub fn ListMut(comptime T: type) type {
+    const tinfo = @typeInfo(T);
+    assert(tinfo == .Pointer);
+    const Child = tinfo.Pointer.child;
+    const cinfo = @typeInfo(Child);
+    assert(cinfo == .Struct);
+    assert(Child != extern_types.String);
+    return extern_types.ArrayListMut(T);
+}
+
+/// helper for repeated scalar types.
+/// checks that T is a String or other scalar type.
+/// returns extern_types.ArrayListMut(T)
+pub fn ListMutScalar(comptime T: type) type {
+    assert(T == extern_types.String or !std.meta.trait.isContainer(T));
+    return extern_types.ArrayListMut(T);
+}
