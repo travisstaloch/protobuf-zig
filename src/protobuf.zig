@@ -23,6 +23,7 @@ const ptrAlignCast = common.ptrAlignCast;
 const ptrfmt = common.ptrfmt;
 const todo = common.todo;
 const afterLastIndexOf = common.afterLastIndexOf;
+const flagsContain = common.flagsContain;
 const pb = @This();
 
 pub const LocalError = error{
@@ -320,13 +321,6 @@ pub const Protobuf = struct {
         }
     };
 
-    fn flagsContain(flags: anytype, flag: anytype) bool {
-        const Set = std.enums.EnumSet(@TypeOf(flag));
-        const I = @TypeOf(@as(Set, undefined).bits.mask);
-        const bitset = Set{ .bits = .{ .mask = @truncate(I, flags) } };
-        return bitset.contains(flag);
-    }
-
     fn isPackableType(typ: types.FieldDescriptorProto.Type) bool {
         return typ != .TYPE_STRING and typ != .TYPE_BYTES and
             typ != .TYPE_MESSAGE;
@@ -448,13 +442,11 @@ pub const Protobuf = struct {
                 std.log.info("{s}: '{s}'", .{ field.name.slice(), bytes });
             },
             .TYPE_MESSAGE => {
-                if (wire_type != .LEN)
-                    return error.FieldMissing;
+                if (wire_type != .LEN) return error.FieldMissing;
 
-                const len = scanned_member.data.len;
                 std.log.debug(
                     "parsing message field '{s}' len {} member {}",
-                    .{ field.name.slice(), len, ptrfmt(member) },
+                    .{ field.name.slice(), scanned_member.data.len, ptrfmt(member) },
                 );
                 if (field.descriptor == null) {
                     std.log.err("field.descriptor == null field {}", .{field.*});
@@ -615,7 +607,7 @@ pub const Protobuf = struct {
             }
 
             if (mfield) |field| {
-                std.log.info("(scan) field {s}.{s} (+0x{x}/{}={})", .{ desc.name.slice(), field.name.slice(), field.offset, field.offset, ptrfmt(buf.ptr + field.offset) });
+                std.log.debug("(scan) field {s}.{s} (+0x{x}/{}={})", .{ desc.name.slice(), field.name.slice(), field.offset, field.offset, ptrfmt(buf.ptr + field.offset) });
                 if (field.label == .LABEL_REPEATED) {
                     // list ele type doesn't matter, just want to change len
                     const list = structMemberPtr(ListMut(u8), message, field.offset);
@@ -625,7 +617,7 @@ pub const Protobuf = struct {
                         list.len += try sm.countPackedElements(field.type);
                     } else list.len += 1;
                 }
-            } else std.log.info("(scan) field {s} unknown", .{desc.name.slice()});
+            } else std.log.debug("(scan) field {s} unknown", .{desc.name.slice()});
             try scanned_members.append(sfalloc, sm);
         }
 
@@ -636,7 +628,7 @@ pub const Protobuf = struct {
                 // list ele type doesn't matter, just want to change len
                 const list = structMemberPtr(ListMut(u8), message, field.offset);
                 if (list.len != 0) {
-                    std.log.info(
+                    std.log.debug(
                         "(scan) field '{s}' - allocating {}={}*{} list bytes",
                         .{ field.name.slice(), size * list.len, size, list.len },
                     );

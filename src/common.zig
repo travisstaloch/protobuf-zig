@@ -1,8 +1,8 @@
 const std = @import("std");
 const mem = std.mem;
-const panicf = std.debug.panic;
 const types = @import("types.zig");
 
+pub const panicf = std.debug.panic;
 pub fn ptrAlign(comptime Ptr: type) comptime_int {
     return @typeInfo(Ptr).Pointer.alignment;
 }
@@ -70,4 +70,11 @@ pub fn repeatedEleSize(t: types.FieldDescriptorProto.Type) u8 {
         .TYPE_BYTES => @sizeOf(types.BinaryData),
         .TYPE_ERROR, .TYPE_GROUP => unreachable,
     };
+}
+
+pub fn flagsContain(flags: anytype, flag: anytype) bool {
+    const Set = std.enums.EnumSet(@TypeOf(flag));
+    const I = @TypeOf(@as(Set, undefined).bits.mask);
+    const bitset = Set{ .bits = .{ .mask = @truncate(I, flags) } };
+    return bitset.contains(flag);
 }

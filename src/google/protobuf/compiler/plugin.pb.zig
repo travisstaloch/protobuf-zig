@@ -49,6 +49,7 @@ pub const UninterpretedOption = extern struct {
                 @offsetOf(NamePart, "name_part"),
                 null,
                 null,
+                0,
             ),
             FieldDescriptor.init(
                 "is_extension",
@@ -58,6 +59,7 @@ pub const UninterpretedOption = extern struct {
                 @offsetOf(NamePart, "is_extension"),
                 null,
                 null,
+                0,
             ),
         };
     };
@@ -71,6 +73,7 @@ pub const UninterpretedOption = extern struct {
             @offsetOf(UninterpretedOption, "name"),
             &NamePart.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "identifier_value",
@@ -80,6 +83,7 @@ pub const UninterpretedOption = extern struct {
             @offsetOf(UninterpretedOption, "identifier_value"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "positive_int_value",
@@ -89,6 +93,7 @@ pub const UninterpretedOption = extern struct {
             @offsetOf(UninterpretedOption, "positive_int_value"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "negative_int_value",
@@ -98,6 +103,7 @@ pub const UninterpretedOption = extern struct {
             @offsetOf(UninterpretedOption, "negative_int_value"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "double_value",
@@ -107,6 +113,7 @@ pub const UninterpretedOption = extern struct {
             @offsetOf(UninterpretedOption, "double_value"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "string_value",
@@ -116,6 +123,7 @@ pub const UninterpretedOption = extern struct {
             @offsetOf(UninterpretedOption, "string_value"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "aggregate_value",
@@ -125,6 +133,7 @@ pub const UninterpretedOption = extern struct {
             @offsetOf(UninterpretedOption, "aggregate_value"),
             null,
             null,
+            0,
         ),
     };
 };
@@ -180,6 +189,7 @@ pub const FieldOptions = extern struct {
             @offsetOf(FieldOptions, "ctype"),
             &CType.descriptor,
             &CType.default_value,
+            0,
         ),
         FieldDescriptor.init(
             "packed",
@@ -189,6 +199,7 @@ pub const FieldOptions = extern struct {
             @offsetOf(FieldOptions, "packed"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "jstype",
@@ -198,6 +209,7 @@ pub const FieldOptions = extern struct {
             @offsetOf(FieldOptions, "jstype"),
             &JSType.descriptor,
             &JSType.default_value,
+            0,
         ),
         FieldDescriptor.init(
             "lazy",
@@ -207,6 +219,7 @@ pub const FieldOptions = extern struct {
             @offsetOf(FieldOptions, "lazy"),
             null,
             &lazy__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "unverified_lazy",
@@ -216,6 +229,7 @@ pub const FieldOptions = extern struct {
             @offsetOf(FieldOptions, "unverified_lazy"),
             null,
             &unverified_lazy__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "deprecated",
@@ -225,6 +239,7 @@ pub const FieldOptions = extern struct {
             @offsetOf(FieldOptions, "deprecated"),
             null,
             &deprecated__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "weak",
@@ -234,6 +249,7 @@ pub const FieldOptions = extern struct {
             @offsetOf(FieldOptions, "weak"),
             null,
             &weak__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "uninterpreted_option",
@@ -243,6 +259,7 @@ pub const FieldOptions = extern struct {
             @offsetOf(FieldOptions, "uninterpreted_option"),
             &UninterpretedOption.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -317,6 +334,7 @@ pub const FieldDescriptorProto = extern struct {
             @offsetOf(FieldDescriptorProto, "name"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "number",
@@ -326,6 +344,7 @@ pub const FieldDescriptorProto = extern struct {
             @offsetOf(FieldDescriptorProto, "number"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "label",
@@ -335,6 +354,7 @@ pub const FieldDescriptorProto = extern struct {
             @offsetOf(FieldDescriptorProto, "label"),
             &Label.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "type",
@@ -344,6 +364,7 @@ pub const FieldDescriptorProto = extern struct {
             @offsetOf(FieldDescriptorProto, "type"),
             &FieldDescriptorProto.Type.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "type_name",
@@ -353,6 +374,7 @@ pub const FieldDescriptorProto = extern struct {
             @offsetOf(FieldDescriptorProto, "type_name"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "extendee",
@@ -362,6 +384,7 @@ pub const FieldDescriptorProto = extern struct {
             @offsetOf(FieldDescriptorProto, "extendee"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "default_value",
@@ -371,6 +394,7 @@ pub const FieldDescriptorProto = extern struct {
             @offsetOf(FieldDescriptorProto, "default_value"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "oneof_index",
@@ -380,6 +404,7 @@ pub const FieldDescriptorProto = extern struct {
             @offsetOf(FieldDescriptorProto, "oneof_index"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "json_name",
@@ -389,6 +414,7 @@ pub const FieldDescriptorProto = extern struct {
             @offsetOf(FieldDescriptorProto, "json_name"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "options",
@@ -398,6 +424,7 @@ pub const FieldDescriptorProto = extern struct {
             @offsetOf(FieldDescriptorProto, "options"),
             &FieldOptions.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "proto3_optional",
@@ -407,6 +434,7 @@ pub const FieldDescriptorProto = extern struct {
             @offsetOf(FieldDescriptorProto, "proto3_optional"),
             null,
             null,
+            0,
         ),
     };
 };
@@ -428,6 +456,7 @@ pub const EnumValueOptions = extern struct {
             @offsetOf(EnumValueOptions, "deprecated"),
             null,
             &deprecated__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "uninterpreted_option",
@@ -437,6 +466,7 @@ pub const EnumValueOptions = extern struct {
             @offsetOf(EnumValueOptions, "uninterpreted_option"),
             &UninterpretedOption.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -458,6 +488,7 @@ pub const EnumValueDescriptorProto = extern struct {
             @offsetOf(EnumValueDescriptorProto, "name"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "number",
@@ -467,6 +498,7 @@ pub const EnumValueDescriptorProto = extern struct {
             @offsetOf(EnumValueDescriptorProto, "number"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "options",
@@ -476,6 +508,7 @@ pub const EnumValueDescriptorProto = extern struct {
             @offsetOf(EnumValueDescriptorProto, "options"),
             &EnumValueOptions.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -498,6 +531,7 @@ pub const EnumOptions = extern struct {
             @offsetOf(EnumOptions, "allow_alias"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "deprecated",
@@ -507,6 +541,7 @@ pub const EnumOptions = extern struct {
             @offsetOf(EnumOptions, "deprecated"),
             null,
             &deprecated__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "uninterpreted_option",
@@ -516,6 +551,7 @@ pub const EnumOptions = extern struct {
             @offsetOf(EnumOptions, "uninterpreted_option"),
             &UninterpretedOption.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -546,6 +582,7 @@ pub const EnumDescriptorProto = extern struct {
                 @offsetOf(EnumReservedRange, "start"),
                 null,
                 null,
+                0,
             ),
             FieldDescriptor.init(
                 "end",
@@ -555,6 +592,7 @@ pub const EnumDescriptorProto = extern struct {
                 @offsetOf(EnumReservedRange, "end"),
                 null,
                 null,
+                0,
             ),
         };
     };
@@ -568,6 +606,7 @@ pub const EnumDescriptorProto = extern struct {
             @offsetOf(EnumDescriptorProto, "name"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "value",
@@ -577,6 +616,7 @@ pub const EnumDescriptorProto = extern struct {
             @offsetOf(EnumDescriptorProto, "value"),
             &EnumValueDescriptorProto.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "options",
@@ -586,6 +626,7 @@ pub const EnumDescriptorProto = extern struct {
             @offsetOf(EnumDescriptorProto, "options"),
             &EnumOptions.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "reserved_range",
@@ -595,6 +636,7 @@ pub const EnumDescriptorProto = extern struct {
             @offsetOf(EnumDescriptorProto, "reserved_range"),
             &EnumReservedRange.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "reserved_name",
@@ -604,6 +646,7 @@ pub const EnumDescriptorProto = extern struct {
             @offsetOf(EnumDescriptorProto, "reserved_name"),
             null,
             null,
+            0,
         ),
     };
 };
@@ -623,6 +666,7 @@ pub const ExtensionRangeOptions = extern struct {
             @offsetOf(ExtensionRangeOptions, "uninterpreted_option"),
             &UninterpretedOption.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -641,6 +685,7 @@ pub const OneofOptions = extern struct {
             @offsetOf(OneofOptions, "uninterpreted_option"),
             &UninterpretedOption.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -661,6 +706,7 @@ pub const OneofDescriptorProto = extern struct {
             @offsetOf(OneofDescriptorProto, "name"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "options",
@@ -670,6 +716,7 @@ pub const OneofDescriptorProto = extern struct {
             @offsetOf(OneofDescriptorProto, "options"),
             &OneofOptions.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -696,6 +743,7 @@ pub const MessageOptions = extern struct {
             @offsetOf(MessageOptions, "message_set_wire_format"),
             null,
             &message_set_wire_format__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "no_standard_descriptor_accessor",
@@ -705,6 +753,7 @@ pub const MessageOptions = extern struct {
             @offsetOf(MessageOptions, "no_standard_descriptor_accessor"),
             null,
             &no_standard_descriptor_accessor__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "deprecated",
@@ -714,6 +763,7 @@ pub const MessageOptions = extern struct {
             @offsetOf(MessageOptions, "deprecated"),
             null,
             &deprecated__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "map_entry",
@@ -723,6 +773,7 @@ pub const MessageOptions = extern struct {
             @offsetOf(MessageOptions, "map_entry"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "uninterpreted_option",
@@ -732,6 +783,7 @@ pub const MessageOptions = extern struct {
             @offsetOf(MessageOptions, "uninterpreted_option"),
             &UninterpretedOption.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -768,6 +820,7 @@ pub const DescriptorProto = extern struct {
                 @offsetOf(ExtensionRange, "start"),
                 null,
                 null,
+                0,
             ),
             FieldDescriptor.init(
                 "end",
@@ -777,6 +830,7 @@ pub const DescriptorProto = extern struct {
                 @offsetOf(ExtensionRange, "end"),
                 null,
                 null,
+                0,
             ),
             FieldDescriptor.init(
                 "options",
@@ -786,6 +840,7 @@ pub const DescriptorProto = extern struct {
                 @offsetOf(ExtensionRange, "options"),
                 &ExtensionRangeOptions.descriptor,
                 null,
+                0,
             ),
         };
     };
@@ -806,6 +861,7 @@ pub const DescriptorProto = extern struct {
                 @offsetOf(ReservedRange, "start"),
                 null,
                 null,
+                0,
             ),
             FieldDescriptor.init(
                 "end",
@@ -815,6 +871,7 @@ pub const DescriptorProto = extern struct {
                 @offsetOf(ReservedRange, "end"),
                 null,
                 null,
+                0,
             ),
         };
     };
@@ -828,6 +885,7 @@ pub const DescriptorProto = extern struct {
             @offsetOf(DescriptorProto, "name"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "field",
@@ -837,6 +895,7 @@ pub const DescriptorProto = extern struct {
             @offsetOf(DescriptorProto, "field"),
             &FieldDescriptorProto.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "extension",
@@ -846,6 +905,7 @@ pub const DescriptorProto = extern struct {
             @offsetOf(DescriptorProto, "extension"),
             &FieldDescriptorProto.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "nested_type",
@@ -855,6 +915,7 @@ pub const DescriptorProto = extern struct {
             @offsetOf(DescriptorProto, "nested_type"),
             null, // workaround for 'dependency loop'
             null,
+            0,
         ),
         FieldDescriptor.init(
             "enum_type",
@@ -864,6 +925,7 @@ pub const DescriptorProto = extern struct {
             @offsetOf(DescriptorProto, "enum_type"),
             &EnumDescriptorProto.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "extension_range",
@@ -873,6 +935,7 @@ pub const DescriptorProto = extern struct {
             @offsetOf(DescriptorProto, "extension_range"),
             &ExtensionRange.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "oneof_decl",
@@ -882,6 +945,7 @@ pub const DescriptorProto = extern struct {
             @offsetOf(DescriptorProto, "oneof_decl"),
             &OneofDescriptorProto.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "options",
@@ -891,6 +955,7 @@ pub const DescriptorProto = extern struct {
             @offsetOf(DescriptorProto, "options"),
             &MessageOptions.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "reserved_range",
@@ -900,6 +965,7 @@ pub const DescriptorProto = extern struct {
             @offsetOf(DescriptorProto, "reserved_range"),
             &ReservedRange.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "reserved_name",
@@ -909,6 +975,7 @@ pub const DescriptorProto = extern struct {
             @offsetOf(DescriptorProto, "reserved_name"),
             null,
             null,
+            0,
         ),
     };
 };
@@ -940,6 +1007,7 @@ pub const MethodOptions = extern struct {
             @offsetOf(MethodOptions, "deprecated"),
             null,
             &deprecated__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "idempotency_level",
@@ -949,6 +1017,7 @@ pub const MethodOptions = extern struct {
             @offsetOf(MethodOptions, "idempotency_level"),
             &IdempotencyLevel.descriptor,
             &idempotency_level__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "uninterpreted_option",
@@ -958,6 +1027,7 @@ pub const MethodOptions = extern struct {
             @offsetOf(MethodOptions, "uninterpreted_option"),
             &UninterpretedOption.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -984,6 +1054,7 @@ pub const MethodDescriptorProto = extern struct {
             @offsetOf(MethodDescriptorProto, "name"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "input_type",
@@ -993,6 +1064,7 @@ pub const MethodDescriptorProto = extern struct {
             @offsetOf(MethodDescriptorProto, "input_type"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "output_type",
@@ -1002,6 +1074,7 @@ pub const MethodDescriptorProto = extern struct {
             @offsetOf(MethodDescriptorProto, "output_type"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "options",
@@ -1011,6 +1084,7 @@ pub const MethodDescriptorProto = extern struct {
             @offsetOf(MethodDescriptorProto, "options"),
             &MethodOptions.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "client_streaming",
@@ -1020,6 +1094,7 @@ pub const MethodDescriptorProto = extern struct {
             @offsetOf(MethodDescriptorProto, "client_streaming"),
             null,
             &client_streaming__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "server_streaming",
@@ -1029,6 +1104,7 @@ pub const MethodDescriptorProto = extern struct {
             @offsetOf(MethodDescriptorProto, "server_streaming"),
             null,
             &server_streaming__default_value,
+            0,
         ),
     };
 };
@@ -1050,6 +1126,7 @@ pub const ServiceOptions = extern struct {
             @offsetOf(ServiceOptions, "deprecated"),
             null,
             &deprecated__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "uninterpreted_option",
@@ -1059,6 +1136,7 @@ pub const ServiceOptions = extern struct {
             @offsetOf(ServiceOptions, "uninterpreted_option"),
             &UninterpretedOption.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -1080,6 +1158,7 @@ pub const ServiceDescriptorProto = extern struct {
             @offsetOf(ServiceDescriptorProto, "name"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "method",
@@ -1089,6 +1168,7 @@ pub const ServiceDescriptorProto = extern struct {
             @offsetOf(ServiceDescriptorProto, "method"),
             &MethodDescriptorProto.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "options",
@@ -1098,6 +1178,7 @@ pub const ServiceDescriptorProto = extern struct {
             @offsetOf(ServiceDescriptorProto, "options"),
             &ServiceOptions.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -1154,6 +1235,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "java_package"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "java_outer_classname",
@@ -1163,6 +1245,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "java_outer_classname"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "java_multiple_files",
@@ -1172,6 +1255,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "java_multiple_files"),
             null,
             &java_multiple_files__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "java_generate_equals_and_hash",
@@ -1181,6 +1265,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "java_generate_equals_and_hash"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "java_string_check_utf8",
@@ -1190,6 +1275,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "java_string_check_utf8"),
             null,
             &java_string_check_utf8__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "optimize_for",
@@ -1199,6 +1285,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "optimize_for"),
             &OptimizeMode.descriptor,
             &optimize_for__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "go_package",
@@ -1208,6 +1295,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "go_package"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "cc_generic_services",
@@ -1217,6 +1305,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "cc_generic_services"),
             null,
             &cc_generic_services__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "java_generic_services",
@@ -1226,6 +1315,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "java_generic_services"),
             null,
             &java_generic_services__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "py_generic_services",
@@ -1235,6 +1325,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "py_generic_services"),
             null,
             &py_generic_services__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "php_generic_services",
@@ -1244,6 +1335,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "php_generic_services"),
             null,
             &php_generic_services__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "deprecated",
@@ -1253,6 +1345,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "deprecated"),
             null,
             &deprecated__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "cc_enable_arenas",
@@ -1262,6 +1355,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "cc_enable_arenas"),
             null,
             &cc_enable_arenas__default_value,
+            0,
         ),
         FieldDescriptor.init(
             "objc_class_prefix",
@@ -1271,6 +1365,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "objc_class_prefix"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "csharp_namespace",
@@ -1280,6 +1375,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "csharp_namespace"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "swift_prefix",
@@ -1289,6 +1385,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "swift_prefix"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "php_class_prefix",
@@ -1298,6 +1395,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "php_class_prefix"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "php_namespace",
@@ -1307,6 +1405,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "php_namespace"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "php_metadata_namespace",
@@ -1316,6 +1415,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "php_metadata_namespace"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "ruby_package",
@@ -1325,6 +1425,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "ruby_package"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "uninterpreted_option",
@@ -1334,6 +1435,7 @@ pub const FileOptions = extern struct {
             @offsetOf(FileOptions, "uninterpreted_option"),
             &UninterpretedOption.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -1363,6 +1465,7 @@ pub const SourceCodeInfo = extern struct {
                 @offsetOf(Location, "path"),
                 null,
                 null,
+                0,
             ),
             FieldDescriptor.init(
                 "span",
@@ -1372,6 +1475,7 @@ pub const SourceCodeInfo = extern struct {
                 @offsetOf(Location, "span"),
                 null,
                 null,
+                0,
             ),
             FieldDescriptor.init(
                 "leading_comments",
@@ -1381,6 +1485,7 @@ pub const SourceCodeInfo = extern struct {
                 @offsetOf(Location, "leading_comments"),
                 null,
                 null,
+                0,
             ),
             FieldDescriptor.init(
                 "trailing_comments",
@@ -1390,6 +1495,7 @@ pub const SourceCodeInfo = extern struct {
                 @offsetOf(Location, "trailing_comments"),
                 null,
                 null,
+                0,
             ),
             FieldDescriptor.init(
                 "leading_detached_comments",
@@ -1399,6 +1505,7 @@ pub const SourceCodeInfo = extern struct {
                 @offsetOf(Location, "leading_detached_comments"),
                 null,
                 null,
+                0,
             ),
         };
     };
@@ -1411,6 +1518,7 @@ pub const SourceCodeInfo = extern struct {
             @offsetOf(SourceCodeInfo, "location"),
             &Location.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -1449,6 +1557,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "name"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "package",
@@ -1458,6 +1567,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "package"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "dependency",
@@ -1467,6 +1577,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "dependency"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "public_dependency",
@@ -1476,6 +1587,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "public_dependency"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "weak_dependency",
@@ -1485,6 +1597,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "weak_dependency"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "message_type",
@@ -1494,6 +1607,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "message_type"),
             &DescriptorProto.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "enum_type",
@@ -1503,6 +1617,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "enum_type"),
             &EnumDescriptorProto.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "service",
@@ -1512,6 +1627,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "service"),
             &ServiceDescriptorProto.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "extension",
@@ -1521,6 +1637,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "extension"),
             &FieldDescriptorProto.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "options",
@@ -1530,6 +1647,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "options"),
             &FileOptions.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "source_code_info",
@@ -1539,6 +1657,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "source_code_info"),
             &SourceCodeInfo.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "syntax",
@@ -1548,6 +1667,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "syntax"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "edition",
@@ -1557,6 +1677,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "edition"),
             null,
             null,
+            0,
         ),
     };
 };
@@ -1576,6 +1697,7 @@ pub const FileDescriptorSet = extern struct {
             @offsetOf(FileDescriptorSet, "file"),
             &FileDescriptorProto.descriptor,
             null,
+            0,
         ),
     };
 };
@@ -1611,6 +1733,7 @@ pub const Version = extern struct {
             @offsetOf(Version, "major"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "minor",
@@ -1620,6 +1743,7 @@ pub const Version = extern struct {
             @offsetOf(Version, "minor"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "patch",
@@ -1629,6 +1753,7 @@ pub const Version = extern struct {
             @offsetOf(Version, "patch"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "suffix",
@@ -1638,6 +1763,7 @@ pub const Version = extern struct {
             @offsetOf(Version, "suffix"),
             null,
             null,
+            0,
         ),
     };
 };
@@ -1667,6 +1793,7 @@ pub const CodeGeneratorRequest = extern struct {
             @offsetOf(CodeGeneratorRequest, "file_to_generate"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "parameter",
@@ -1676,6 +1803,7 @@ pub const CodeGeneratorRequest = extern struct {
             @offsetOf(CodeGeneratorRequest, "parameter"),
             null,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "proto_file",
@@ -1685,6 +1813,7 @@ pub const CodeGeneratorRequest = extern struct {
             @offsetOf(CodeGeneratorRequest, "proto_file"),
             &FileDescriptorProto.descriptor,
             null,
+            0,
         ),
         FieldDescriptor.init(
             "compiler_version",
@@ -1694,6 +1823,7 @@ pub const CodeGeneratorRequest = extern struct {
             @offsetOf(CodeGeneratorRequest, "compiler_version"),
             &Version.descriptor,
             null,
+            0,
         ),
     };
 };

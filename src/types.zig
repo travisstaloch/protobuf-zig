@@ -9,8 +9,9 @@ pub usingnamespace pbtypes;
 pub usingnamespace extern_types;
 
 pub fn IntegerBitset(comptime len: usize) type {
-    const n = @max(8, std.math.ceilPowerOfTwo(usize, @max(len, 1)) catch unreachable);
-    return std.meta.Int(.unsigned, n);
+    const l = std.math.ceilPowerOfTwo(usize, @max(len, 1)) catch
+        unreachable;
+    return std.meta.Int(.unsigned, @max(8, l));
 }
 
 /// https://protobuf.dev/programming-guides/encoding/#structure

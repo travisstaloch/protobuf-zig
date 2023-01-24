@@ -8,11 +8,13 @@ const ptrfmt = common.ptrfmt;
 const compileErr = common.compileErr;
 const ptrAlignCast = common.ptrAlignCast;
 const todo = common.todo;
+const panicf = common.panicf;
 const String = types.String;
 const List = types.ArrayList;
 const ListMut = types.ListMut;
 const ListMutScalar = types.ListMutScalar;
 const FieldDescriptorProto = plugin.FieldDescriptorProto;
+const flagsContain = common.flagsContain;
 
 pub const SERVICE_DESCRIPTOR_MAGIC = 0x14159bc3;
 pub const MESSAGE_DESCRIPTOR_MAGIC = 0x28aaeef9;
@@ -56,10 +58,10 @@ fn SetPresentField(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T)) voi
     }.setPresentField;
 }
 
-fn IsPresentField(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T)) bool {
+fn IsPresentField(comptime T: type) fn (T, comptime std.meta.FieldEnum(T)) bool {
     return struct {
         const FieldEnum = std.meta.FieldEnum(T);
-        pub fn isPresentField(self: *T, comptime field_enum: std.meta.FieldEnum(T)) bool {
+        pub fn isPresentField(self: T, comptime field_enum: std.meta.FieldEnum(T)) bool {
             const tagname = @tagName(field_enum);
             const name = T.descriptor.name.slice();
             if (comptime mem.eql(u8, "base", tagname))
@@ -212,7 +214,7 @@ pub const FieldDescriptor = extern struct {
     reserved2: ?*anyopaque = null,
     reserved3: ?*anyopaque = null,
 
-    const FieldFlags = types.IntegerBitset(std.meta.tags(FieldFlag).len);
+    pub const FieldFlags = types.IntegerBitset(std.meta.tags(FieldFlag).len);
     pub const FieldFlag = enum(u8) {
         FLAG_PACKED,
         FLAG_DEPRECATED,
@@ -227,6 +229,7 @@ pub const FieldDescriptor = extern struct {
         offset: c_uint,
         descriptor: ?*const anyopaque,
         default_value: ?*const anyopaque,
+        flags: FieldFlags,
     ) FieldDescriptor {
         return .{
             .name = String.init(name),
@@ -236,6 +239,7 @@ pub const FieldDescriptor = extern struct {
             .offset = offset,
             .descriptor = descriptor,
             .default_value = default_value,
+            .flags = flags,
         };
     }
 
@@ -284,10 +288,15 @@ pub const MessageDescriptor = extern struct {
 
             const sizeof_message = result.sizeof_message;
             assert(sizeof_message == @sizeOf(T));
+            var n_oneof_fields: u32 = 0;
+            for (fields.slice()) |field|
+                n_oneof_fields +=
+                    @boolToInt(flagsContain(field.flags, FieldDescriptor.FieldFlag.FLAG_ONEOF));
             const len = @typeInfo(T).Struct.fields.len;
-            if (fields.len + 1 != len) compileErr(
-                "{s} field lengths mismatch. expected '{}' got '{}'",
-                .{ name, fields.len + 1, len },
+            const actual_len = fields.len + 1 - (n_oneof_fields -| 1);
+            if (actual_len != len) compileErr(
+                "{s} field lengths mismatch. expected {} got {}",
+                .{ name, len, actual_len },
             );
             const tfields = std.meta.fields(T);
             var fields_total_size: usize = @sizeOf(Message);
@@ -297,16 +306,19 @@ pub const MessageDescriptor = extern struct {
             if (tfields[0].type != Message)
                 compileErr("{s} 'base' field expected 'Message' type. got '{s}'.", .{@typeName(tfields[0].type)});
             for (tfields[1..tfields.len]) |f, i| {
-                if (!mem.eql(u8, f.name, fields.items[i].name.slice()))
+                const field = fields.items[i];
+                if (!flagsContain(field.flags, FieldDescriptor.FieldFlag.FLAG_ONEOF) and
+                    !mem.eql(u8, f.name, field.name.slice()))
                     compileErr(
                         "{s} field name mismatch. expected '{s}' got '{s}'",
-                        .{ name, f.name, fields.items[i].name },
+                        .{ name, f.name, field.name },
                     );
+
                 const expected_offset = @offsetOf(T, f.name);
-                if (expected_offset != fields.items[i].offset)
+                if (expected_offset != field.offset)
                     compileErr(
                         "{s} offset mismatch expected '{}' got '{}'",
-                        .{ name, expected_offset, fields.items[i].offset },
+                        .{ name, expected_offset, field.offset },
                     );
                 fields_total_size += expected_offset - last_field_offset;
                 last_field_offset = expected_offset;
@@ -373,6 +385,7 @@ pub const Message = extern struct {
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse return;
         m.optional_fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx);
         std.log.debug("setPresent 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
+        // TODO if oneof field, remove other fields w/ same oneof_index
     }
 
     pub fn setPresentFieldIndex(m: *Message, field_index: usize) void {
@@ -471,13 +484,20 @@ pub const Message = extern struct {
     ) void {
         const bytes = @ptrCast([*]u8, m);
         const desc = m.descriptor orelse
-            std.debug.panic("can't deinit a message with no descriptor.", .{});
+            panicf("can't deinit a message with no descriptor.", .{});
 
-        std.log.debug("\ndeinit message {s}{}-{} size={}", .{ desc.name.slice(), ptrfmt(m), ptrfmt(bytes + desc.sizeof_message), desc.sizeof_message });
-
+        std.log.debug(
+            "\ndeinit message {s}{}-{} size={}",
+            .{ desc.name.slice(), ptrfmt(m), ptrfmt(bytes + desc.sizeof_message), desc.sizeof_message },
+        );
         for (desc.fields.slice()) |field| {
             if (mode == .only_pointer_fields and !isPointerField(field))
                 continue;
+            if (flagsContain(field.flags, FieldDescriptor.FieldFlag.FLAG_ONEOF) and
+                !m.isPresent(field.id))
+            {
+                continue;
+            }
             if (field.label == .LABEL_REPEATED) {
                 if (field.type == .TYPE_STRING) {
                     const L = ListMutScalar(String);
