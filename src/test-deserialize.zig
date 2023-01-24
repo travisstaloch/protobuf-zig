@@ -2,10 +2,9 @@ const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
 
-const pb = @import("protobuf-util.zig");
+const pb = @import("protobuf.zig");
 const types = @import("types.zig");
 const common = @import("common.zig");
-const util = @import("protobuf-util.zig");
 const ptrfmt = common.ptrfmt;
 const CodeGeneratorRequest = types.CodeGeneratorRequest;
 const FieldDescriptorProto = types.FieldDescriptorProto;
@@ -17,21 +16,14 @@ const talloc = testing.allocator;
 
 /// 1. genrate zig-out/bin/protoc-gen-zig by running $ zig build
 /// 2. run the following with a modified $PATH that includes zig-out/bin/
-///    $ protoc --zig_out=gen `protofile`
+///    $ protoc --plugin zig-out/bin/protoc-gen-zig --zig_out=gen `protofile`
 fn parseWithSystemProtoc(protofile: []const u8) ![]const u8 {
-    { // make sure the exe is built
+    { // make sure the exe is built in echo mode
         _ = try std.ChildProcess.exec(.{ .allocator = talloc, .argv = &.{ "zig", "build" } });
     }
-    var envmap = try std.process.getEnvMap(talloc);
-    defer envmap.deinit();
-    const path = envmap.get("PATH") orelse unreachable;
-    const newpath = try std.mem.concat(talloc, u8, &.{ path, ":zig-out/bin/" });
-    defer talloc.free(newpath);
-    try envmap.put("PATH", newpath);
     const r = try std.ChildProcess.exec(.{
         .allocator = talloc,
-        .argv = &.{ "protoc", "--zig_out=gen", protofile },
-        .env_map = &envmap,
+        .argv = &.{ "protoc", "--plugin", "zig-out/bin/protoc-gen-zig", "--zig_out=gen", protofile },
     });
     talloc.free(r.stdout);
     return r.stderr;
@@ -137,7 +129,7 @@ fn lengthEncode(comptime parts: anytype) []const u8 {
     const m = encodeMessage(parts);
     var buf: [10]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
-    try util.writeVarint128(usize, m.len, fbs.writer(), .int);
+    try pb.writeVarint128(usize, m.len, fbs.writer(), .int);
     return buf[0..fbs.pos] ++ m;
 }
 
@@ -247,6 +239,7 @@ test "message deinit" {
 }
 
 test "message missing required fields" {
+    testing.log_level = .err;
     const req = deserializeBytesHelper(types.UninterpretedOption.NamePart, "", talloc);
     try testing.expectError(error.RequiredFieldMissing, req);
 }

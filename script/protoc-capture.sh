@@ -2,4 +2,5 @@
 # use system protoc to encode a CodeGeneratorRequest to zig-out/bin/protoc-gen-zig
 
 set -e
-PATH=zig-out/bin/:$PATH protoc --zig_out=gen $@
+zig build
+protoc --plugin=./zig-out/bin/protoc-gen-zig --zig_out=gen $@

@@ -23,7 +23,7 @@ const ptrAlignCast = common.ptrAlignCast;
 const ptrfmt = common.ptrfmt;
 const todo = common.todo;
 const afterLastIndexOf = common.afterLastIndexOf;
-const pbutil = @This();
+const pb = @This();
 
 pub const LocalError = error{
     InvalidKey,
@@ -148,7 +148,7 @@ pub const Protobuf = struct {
         pub fn readVarint128(ctx: *Ctx, comptime T: type, mode: IntMode) !T {
             var ctxfbs = ctx.fbs();
             const reader = ctxfbs.reader();
-            const value = try pbutil.readVarint128(T, reader, mode);
+            const value = try pb.readVarint128(T, reader, mode);
             ctx.skip(ctxfbs.pos);
             return value;
         }
@@ -270,7 +270,7 @@ pub const Protobuf = struct {
 
         pub fn readVarint128(sm: ScannedMember, comptime T: type, mode: IntMode) !T {
             var stream = std.io.fixedBufferStream(sm.data);
-            return pbutil.readVarint128(T, stream.reader(), mode);
+            return pb.readVarint128(T, stream.reader(), mode);
         }
 
         fn maxB128Numbers(data: []const u8) usize {
@@ -379,7 +379,7 @@ pub const Protobuf = struct {
             else => return err,
         };
         const field = scanned_member.field orelse unreachable;
-        std.log.info("parseOptionalMember() setPresent({}) - {s}", .{ field.id, field.name });
+        std.log.debug("parseOptionalMember() setPresent({}) - {s}", .{ field.id, field.name });
         message.setPresent(field.id);
     }
 
@@ -400,7 +400,7 @@ pub const Protobuf = struct {
     fn listAppend(_: Allocator, member: [*]u8, comptime L: type, item: L.Child) !void {
         const list = ptrAlignCast(*L, member);
         const short_name = afterLastIndexOf(@typeName(L.Child), '.');
-        std.log.info("listAppend() {s} member {} list {}/{}/{}", .{ short_name, ptrfmt(member), ptrfmt(list.items), list.len, list.cap });
+        std.log.debug("listAppend() {s} member {} list {}/{}/{}", .{ short_name, ptrfmt(member), ptrfmt(list.items), list.len, list.cap });
         list.appendAssumeCapacity(item);
     }
 
@@ -445,7 +445,7 @@ pub const Protobuf = struct {
                     var s = ptrAlignCast(*String, member);
                     s.* = String.init(bytes);
                 }
-                std.log.info("{s}: '{s}' {}", .{ field.name.slice(), bytes, ptrfmt(bytes.ptr) });
+                std.log.info("{s}: '{s}'", .{ field.name.slice(), bytes });
             },
             .TYPE_MESSAGE => {
                 if (wire_type != .LEN)
@@ -456,19 +456,21 @@ pub const Protobuf = struct {
                     "parsing message field '{s}' len {} member {}",
                     .{ field.name.slice(), len, ptrfmt(member) },
                 );
-                if (field.descriptor == null)
+                if (field.descriptor == null) {
                     std.log.err("field.descriptor == null field {}", .{field.*});
+                    return error.DescriptorMissing;
+                }
 
                 var limctx = ctx.withData(scanned_member.data);
                 const field_desc = field.getDescriptor(MessageDescriptor);
                 std.log.debug("sizeof_message {}", .{field_desc.sizeof_message});
 
                 if (field.label == .LABEL_REPEATED) {
-                    std.log.info(".repeated {s} sizeof={}", .{ field_desc.name.slice(), field_desc.sizeof_message });
+                    std.log.debug(".repeated {s} sizeof={}", .{ field_desc.name.slice(), field_desc.sizeof_message });
                     const subm = try deserialize(field_desc, &limctx);
                     try listAppend(ctx.alloc, member, ListMut(*Message), subm);
                 } else {
-                    std.log.info(".single {s} sizeof={}", .{ field_desc.name.slice(), field_desc.sizeof_message });
+                    std.log.debug(".single {s} sizeof={}", .{ field_desc.name.slice(), field_desc.sizeof_message });
                     const buf = member[0..field_desc.sizeof_message];
                     _ = try deserializeTo(buf, field_desc, &limctx);
                 }
@@ -624,7 +626,6 @@ pub const Protobuf = struct {
                     } else list.len += 1;
                 }
             } else std.log.info("(scan) field {s} unknown", .{desc.name.slice()});
-            std.log.info("scanned_members.append()", .{});
             try scanned_members.append(sfalloc, sm);
         }
 

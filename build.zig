@@ -9,14 +9,15 @@ pub fn build(b: *std.build.Builder) void {
         "log-level",
         "The log level for the application. default .err",
     ) orelse .err;
-    const hex_output = b.option(
+    const echo_hex = b.option(
         bool,
-        "hex",
-        "protoc-gen-zig output hex instead of raw bytes",
+        "echo-hex",
+        "protoc-gen-zig will echo contents of stdin as hex instead of raw bytes.  useful for capturing results of system protoc commands in hex format.",
     ) orelse false;
+
     const build_options = b.addOptions();
     build_options.addOption(std.log.Level, "log_level", log_level);
-    build_options.addOption(bool, "hex_output", hex_output);
+    build_options.addOption(bool, "echo_hex", echo_hex);
 
     // for capturing output of system installed protoc. just echoes out whatever protoc sends
     const protocgen_echo = b.addExecutable("protoc-gen-zig", "src/protoc-gen-zig.zig");

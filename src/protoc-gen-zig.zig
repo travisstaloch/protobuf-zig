@@ -11,10 +11,12 @@ pub fn main() !void {
     const stdin = io.getStdIn().reader();
     const stderr = io.getStdErr().writer();
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const allr = arena.allocator();
-    const input = try stdin.readAllAlloc(allr, std.math.maxInt(u32));
+    const alloc = arena.allocator();
+    const input = try stdin.readAllAlloc(alloc, std.math.maxInt(u32));
 
-    if (build_options.hex_output)
+    // std.debug.print("stdin {}\n", .{input});
+
+    if (build_options.echo_hex)
         try stderr.print("{}", .{std.fmt.fmtSliceHexLower(input)})
     else
         _ = try stderr.writeAll(input);
