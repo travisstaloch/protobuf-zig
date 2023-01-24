@@ -50,10 +50,30 @@ fn SetPresentField(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T)) voi
                 compileErr("{s}.setPresentField() field_enum == .base", .{name});
             const field_idx = std.meta.fieldIndex(T, tagname) orelse
                 compileErr("{s}.setPresentField() invalid field name {s}", .{ name, tagname });
-            std.log.info("setPresentField() {s}.{s}:{}", .{ name, @tagName(field_enum), field_idx });
+            std.log.debug("setPresentField() {s}.{s}:{}", .{ name, @tagName(field_enum), field_idx });
             self.base.setPresentFieldIndex(field_idx - 1);
         }
     }.setPresentField;
+}
+
+fn IsPresentField(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T)) bool {
+    return struct {
+        const FieldEnum = std.meta.FieldEnum(T);
+        pub fn isPresentField(self: *T, comptime field_enum: std.meta.FieldEnum(T)) bool {
+            const tagname = @tagName(field_enum);
+            const name = T.descriptor.name.slice();
+            if (comptime mem.eql(u8, "base", tagname))
+                compileErr("{s}.isPresentField() field_enum == .base", .{name});
+            const field_idx = std.meta.fieldIndex(T, tagname) orelse
+                compileErr("{s}.isPresentField() invalid field name {s}", .{ name, tagname });
+            const field_id = T.field_ids[field_idx - 1];
+            std.log.debug(
+                "isPresentField() {s}.{s}:{} field_id {} isPresent()={}",
+                .{ name, @tagName(field_enum), field_idx, field_id, self.base.isPresent(field_id) },
+            );
+            return self.base.isPresent(field_id);
+        }
+    }.isPresentField;
 }
 
 const WriteErr = std.fs.File.WriteError;
@@ -72,6 +92,7 @@ fn optionalFieldIds(comptime field_descriptors: []const FieldDescriptor) []const
     }
     return result[0..count];
 }
+
 fn fieldIds(comptime field_descriptors: []const FieldDescriptor) []const c_uint {
     var result: [field_descriptors.len]c_uint = undefined;
     for (field_descriptors) |fd, i| {
@@ -79,6 +100,7 @@ fn fieldIds(comptime field_descriptors: []const FieldDescriptor) []const c_uint 
     }
     return &result;
 }
+
 fn fieldIndicesByName(comptime field_descriptors: []const FieldDescriptor) []const c_uint {
     const Tup = struct { c_uint, []const u8 };
     var tups: [field_descriptors.len]Tup = undefined;
@@ -121,6 +143,7 @@ pub fn MessageMixins(comptime Self: type) type {
         pub const initBytes = InitBytes(Self);
         pub const format = Format(Self);
         pub const setPresentField = SetPresentField(Self);
+        pub const isPresentField = IsPresentField(Self);
         pub const field_ids = fieldIds(&Self.field_descriptors);
         pub const opt_field_ids = optionalFieldIds(&Self.field_descriptors);
         pub const descriptor = MessageDescriptor.init(Self);
@@ -131,6 +154,9 @@ pub fn EnumMixins(comptime Self: type) type {
     return struct {
         pub const enum_values_by_number = enumValuesByNumber(Self);
         pub const descriptor = EnumDescriptor.init(Self);
+        pub fn tagName(self: Self) []const u8 {
+            return @tagName(self);
+        }
     };
 }
 
@@ -259,9 +285,9 @@ pub const MessageDescriptor = extern struct {
             const sizeof_message = result.sizeof_message;
             assert(sizeof_message == @sizeOf(T));
             const len = @typeInfo(T).Struct.fields.len;
-            if (len != fields.len + 1) compileErr(
+            if (fields.len + 1 != len) compileErr(
                 "{s} field lengths mismatch. expected '{}' got '{}'",
-                .{ name, len, fields.len },
+                .{ name, fields.len + 1, len },
             );
             const tfields = std.meta.fields(T);
             var fields_total_size: usize = @sizeOf(Message);
@@ -343,9 +369,8 @@ pub const Message = extern struct {
     pub fn setPresent(m: *Message, field_id: c_uint) void {
         const desc = m.descriptor orelse
             @panic("called setPresent() on a message with no descriptor.");
-        std.log.info("setPresent({}) - {any}", .{ field_id, desc.opt_field_ids });
+        std.log.debug("setPresent({}) - {any}", .{ field_id, desc.opt_field_ids });
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse return;
-        std.log.debug("setPresent 1 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
         m.optional_fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx);
         std.log.debug("setPresent 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
     }
@@ -409,7 +434,7 @@ pub const Message = extern struct {
                         if (f.label == .LABEL_REPEATED) todo("format repeated bool", .{});
                         try writer.print(".{s} = {}", .{ field_name, member[0] });
                     },
-                    .TYPE_INT32 => {
+                    .TYPE_INT32, .TYPE_ENUM => {
                         if (f.label == .LABEL_REPEATED) {
                             const list = ptrAlignCast(*const ListMutScalar(i32), member);
                             if (list.len == 0) continue; // prevent extra commas

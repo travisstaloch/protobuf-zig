@@ -1,0 +1,10 @@
+syntax = "proto2";
+
+import "only_enum.proto";
+
+message Person {
+  required string name = 1;
+  required int32 id = 2;  // Unique ID number for this person.
+  required string email = 3;
+  optional SomeKind kind = 4 [default=A];
+}

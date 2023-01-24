@@ -82,15 +82,10 @@ pub fn main() !void {
     for (files.items) |file|
         try argv.append(file);
 
-    std.debug.print("argv {s}\n", .{argv.items});
-
     const res = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .argv = argv.items,
     });
-
-    // std.debug.print("res stdout {s}\n", .{res.stdout});
-    // std.debug.print("res stderr {s}\n", .{res.stderr});
 
     var parse_ctx = pb.context(res.stderr, alloc);
     if (decode.len == 0) {
