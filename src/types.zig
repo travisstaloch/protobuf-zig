@@ -1,12 +1,8 @@
 const std = @import("std");
-const extern_types = @import("extern-types.zig");
-const plugin = @import("google/protobuf/compiler/plugin.pb.zig");
-const pbtypes = @import("protobuf-types.zig");
 const assert = std.debug.assert;
-
-pub usingnamespace plugin;
-pub usingnamespace pbtypes;
-pub usingnamespace extern_types;
+const plugin = @import("plugin");
+const FieldDescriptorProto = plugin.FieldDescriptorProto;
+const Message = plugin.Message;
 
 pub fn IntegerBitset(comptime len: usize) type {
     const l = std.math.ceilPowerOfTwo(usize, @max(len, 1)) catch
@@ -37,24 +33,3 @@ pub const Key = extern struct {
         };
     }
 };
-
-/// helper for repeated message types.
-/// checks that T is a pointer to struct and not pointer to String.
-/// returns types.ListTypeMut(T)
-pub fn ListMut(comptime T: type) type {
-    const tinfo = @typeInfo(T);
-    assert(tinfo == .Pointer);
-    const Child = tinfo.Pointer.child;
-    const cinfo = @typeInfo(Child);
-    assert(cinfo == .Struct);
-    assert(Child != extern_types.String);
-    return extern_types.ArrayListMut(T);
-}
-
-/// helper for repeated scalar types.
-/// checks that T is a String or other scalar type.
-/// returns extern_types.ArrayListMut(T)
-pub fn ListMutScalar(comptime T: type) type {
-    assert(T == extern_types.String or !std.meta.trait.isContainer(T));
-    return extern_types.ArrayListMut(T);
-}

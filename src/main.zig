@@ -1,11 +1,11 @@
 const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
-const pb = @import("protobuf.zig");
-const types = @import("types.zig");
-const common = @import("common.zig");
+const pb = @import("protobuf");
+const types = pb.types;
+const common = pb.common;
 const gen = @import("gen.zig");
-pub const CodeGeneratorRequest = types.CodeGeneratorRequest;
+pub const CodeGeneratorRequest = pb.plugin.CodeGeneratorRequest;
 
 pub const std_options = struct {
     pub const log_level = std.meta.stringToEnum(std.log.Level, @tagName(@import("build_options").log_level)).?;
@@ -85,9 +85,17 @@ pub fn main() !void {
     const res = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .argv = argv.items,
+        .max_output_bytes = std.math.maxInt(u16),
     });
 
-    var parse_ctx = pb.context(res.stderr, alloc);
+    if (res.term != .Exited or res.term.Exited != 0) {
+        const cmd = try mem.join(alloc, " ", argv.items);
+        std.debug.print("{s}\n", .{cmd});
+        std.log.err("{s}\n", .{res.stderr});
+        return error.SystemProtocError;
+    }
+
+    var parse_ctx = pb.protobuf.context(res.stderr, alloc);
     if (decode.len == 0) {
         const message = try parse_ctx.deserialize(&CodeGeneratorRequest.descriptor);
         const req = try message.as(CodeGeneratorRequest);

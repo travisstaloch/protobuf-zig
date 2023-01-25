@@ -2,29 +2,32 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const assert = std.debug.assert;
-const types = @import("types.zig");
-const Message = types.Message;
-const MessageDescriptor = types.MessageDescriptor;
+const pb = @import("protobuf");
+const plugin = pb.plugin;
+const Message = pb.pbtypes.Message;
+const MessageDescriptor = pb.pbtypes.MessageDescriptor;
+const types = pb.types;
 const WireType = types.WireType;
 const BinaryType = types.BinaryType;
 const Label = types.Label;
 const FieldFlag = FieldDescriptor.FieldFlag;
-const List = types.ArrayList;
-const ListMut = types.ArrayListMut;
+const extern_types = pb.extern_types;
+const List = extern_types.ArrayList;
+const ListMut = extern_types.ArrayListMut;
 const IntRange = types.IntRange;
-const FieldDescriptor = types.FieldDescriptor;
-const FieldDescriptorProto = types.FieldDescriptorProto;
-const BinaryData = types.BinaryData;
-const String = types.String;
+const pbtypes = pb.pbtypes;
+const FieldDescriptor = pbtypes.FieldDescriptor;
+const FieldDescriptorProto = plugin.FieldDescriptorProto;
+const BinaryData = pbtypes.BinaryData;
+const String = pb.extern_types.String;
 const Key = types.Key;
-const virt_reader = @import("virtual-reader.zig");
-const common = @import("common.zig");
+const common = pb.common;
 const ptrAlignCast = common.ptrAlignCast;
 const ptrfmt = common.ptrfmt;
 const todo = common.todo;
 const afterLastIndexOf = common.afterLastIndexOf;
 const flagsContain = common.flagsContain;
-const pb = @This();
+const top_level = @This();
 
 pub const LocalError = error{
     InvalidKey,
@@ -105,6 +108,31 @@ pub fn context(data: []const u8, alloc: Allocator) Protobuf.Ctx {
     return Protobuf.Ctx.init(data, alloc);
 }
 
+pub fn repeatedEleSize(t: FieldDescriptorProto.Type) u8 {
+    return switch (t) {
+        .TYPE_SINT32,
+        .TYPE_INT32,
+        .TYPE_UINT32,
+        .TYPE_SFIXED32,
+        .TYPE_FIXED32,
+        .TYPE_FLOAT,
+        .TYPE_ENUM,
+        => 4,
+        .TYPE_SINT64,
+        .TYPE_INT64,
+        .TYPE_UINT64,
+        .TYPE_SFIXED64,
+        .TYPE_FIXED64,
+        .TYPE_DOUBLE,
+        => 8,
+        .TYPE_BOOL => @sizeOf(bool),
+        .TYPE_STRING => @sizeOf(pb.extern_types.String),
+        .TYPE_MESSAGE => @sizeOf(*Message),
+        .TYPE_BYTES => @sizeOf(pbtypes.BinaryData),
+        .TYPE_ERROR, .TYPE_GROUP => unreachable,
+    };
+}
+
 pub const Protobuf = struct {
     const Ctx = struct {
         data: []const u8,
@@ -149,7 +177,7 @@ pub const Protobuf = struct {
         pub fn readVarint128(ctx: *Ctx, comptime T: type, mode: IntMode) !T {
             var ctxfbs = ctx.fbs();
             const reader = ctxfbs.reader();
-            const value = try pb.readVarint128(T, reader, mode);
+            const value = try top_level.readVarint128(T, reader, mode);
             ctx.skip(ctxfbs.pos);
             return value;
         }
@@ -239,7 +267,7 @@ pub const Protobuf = struct {
                     .TYPE_DOUBLE,
                     => @memcpy(field_bytes, default, 8),
                     .TYPE_BOOL => @memcpy(field_bytes, default, @sizeOf(bool)),
-                    .TYPE_BYTES => @memcpy(field_bytes, default, @sizeOf(types.BinaryData)),
+                    .TYPE_BYTES => @memcpy(field_bytes, default, @sizeOf(pbtypes.BinaryData)),
                     .TYPE_STRING,
                     .TYPE_MESSAGE,
                     => { //
@@ -271,7 +299,7 @@ pub const Protobuf = struct {
 
         pub fn readVarint128(sm: ScannedMember, comptime T: type, mode: IntMode) !T {
             var stream = std.io.fixedBufferStream(sm.data);
-            return pb.readVarint128(T, stream.reader(), mode);
+            return top_level.readVarint128(T, stream.reader(), mode);
         }
 
         fn maxB128Numbers(data: []const u8) usize {
@@ -321,13 +349,13 @@ pub const Protobuf = struct {
         }
     };
 
-    fn isPackableType(typ: types.FieldDescriptorProto.Type) bool {
+    fn isPackableType(typ: plugin.FieldDescriptorProto.Type) bool {
         return typ != .TYPE_STRING and typ != .TYPE_BYTES and
             typ != .TYPE_MESSAGE;
     }
 
     fn assertIsMessageDescriptor(desc: *const MessageDescriptor) void {
-        assert(desc.magic == types.MESSAGE_DESCRIPTOR_MAGIC);
+        assert(desc.magic == pbtypes.MESSAGE_DESCRIPTOR_MAGIC);
     }
 
     fn parsePackedRepeatedMember(scanned_member: ScannedMember, member: [*]u8, _: *Message, ctx: *Ctx) !void {
@@ -473,7 +501,7 @@ pub const Protobuf = struct {
 
     fn parseMember(scanned_member: ScannedMember, message: *Message, ctx: *Ctx) !void {
         const field = scanned_member.field orelse {
-            var ufield = try ctx.alloc.create(types.MessageUnknownField);
+            var ufield = try ctx.alloc.create(pbtypes.MessageUnknownField);
             ufield.* = .{
                 .key = scanned_member.key,
                 .data = String.init(try ctx.alloc.dupe(u8, scanned_member.data)),
@@ -554,7 +582,7 @@ pub const Protobuf = struct {
             var mfield: ?*const FieldDescriptor = null;
             if (last_field == null or last_field.?.id != key.field_id) {
                 if (intRangeLookup(desc.field_ids, key.field_id)) |field_index| {
-                    std.log.debug("(scan) found field_id={} at index={}", .{ key.field_id, field_index });
+                    std.log.info("(scan) found field_id={} at index={}", .{ key.field_id, field_index });
                     mfield = &desc.fields.items[field_index];
                     last_field = mfield;
                     last_field_index = @intCast(u7, field_index);
@@ -624,7 +652,7 @@ pub const Protobuf = struct {
         var missing_any_required = false;
         for (desc.fields.slice()) |field, i| {
             if (field.label == .LABEL_REPEATED) {
-                const size = common.repeatedEleSize(field.type);
+                const size = pb.protobuf.repeatedEleSize(field.type);
                 // list ele type doesn't matter, just want to change len
                 const list = structMemberPtr(ListMut(u8), message, field.offset);
                 if (list.len != 0) {

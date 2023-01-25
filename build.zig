@@ -15,6 +15,16 @@ pub fn build(b: *std.build.Builder) void {
         "protoc-gen-zig will echo contents of stdin as hex instead of raw bytes.  useful for capturing results of system protoc commands in hex format.",
     ) orelse false;
 
+    const protobuf_pkg = std.build.Pkg{
+        .name = "protobuf",
+        .source = .{ .path = "src/lib.zig" },
+        // TODO get rid of this nesting
+        .dependencies = &.{.{
+            .name = "protobuf",
+            .source = .{ .path = "src/lib.zig" },
+        }},
+    };
+
     const build_options = b.addOptions();
     build_options.addOption(std.log.Level, "log_level", log_level);
     build_options.addOption(bool, "echo_hex", echo_hex);
@@ -31,6 +41,7 @@ pub fn build(b: *std.build.Builder) void {
     protoc_zig.setBuildMode(mode);
     protoc_zig.install();
     protoc_zig.addOptions("build_options", build_options);
+    protoc_zig.addPackage(protobuf_pkg);
 
     const run_cmd = protoc_zig.run();
     run_cmd.step.dependOn(b.getInstallStep());
@@ -42,6 +53,7 @@ pub fn build(b: *std.build.Builder) void {
 
     const main_tests = b.addTest("src/tests.zig");
     main_tests.setBuildMode(mode);
+    main_tests.addPackage(protobuf_pkg);
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);

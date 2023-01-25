@@ -1,19 +1,21 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const mem = std.mem;
-const types = @import("types.zig");
-const common = @import("common.zig");
-const plugin = @import("google/protobuf/compiler/plugin.pb.zig");
+const pb = @import("protobuf");
 const ptrfmt = common.ptrfmt;
 const compileErr = common.compileErr;
 const ptrAlignCast = common.ptrAlignCast;
 const todo = common.todo;
 const panicf = common.panicf;
-const String = types.String;
-const List = types.ArrayList;
-const ListMut = types.ListMut;
-const ListMutScalar = types.ListMutScalar;
+const extern_types = pb.extern_types;
+const types = pb.types;
+const String = extern_types.String;
+const List = extern_types.ArrayList;
+const ListMut = extern_types.ListMut;
+const ListMutScalar = extern_types.ListMutScalar;
+const plugin = pb.plugin;
 const FieldDescriptorProto = plugin.FieldDescriptorProto;
+const common = pb.common;
 const flagsContain = common.flagsContain;
 
 pub const SERVICE_DESCRIPTOR_MAGIC = 0x14159bc3;
@@ -210,11 +212,12 @@ pub const FieldDescriptor = extern struct {
     descriptor: ?*const anyopaque = null,
     default_value: ?*const anyopaque = null,
     flags: FieldFlags = 0,
+    recursive_descriptor: bool = false,
     reserved_flags: c_uint = 0,
     reserved2: ?*anyopaque = null,
     reserved3: ?*anyopaque = null,
 
-    pub const FieldFlags = types.IntegerBitset(std.meta.tags(FieldFlag).len);
+    pub const FieldFlags = pb.types.IntegerBitset(std.meta.tags(FieldFlag).len);
     pub const FieldFlag = enum(u8) {
         FLAG_PACKED,
         FLAG_DEPRECATED,
@@ -243,6 +246,29 @@ pub const FieldDescriptor = extern struct {
         };
     }
 
+    pub fn initRecursive(
+        name: [:0]const u8,
+        id: u32,
+        label: FieldDescriptorProto.Label,
+        typ: FieldDescriptorProto.Type,
+        offset: c_uint,
+        descriptor: ?*const anyopaque,
+        default_value: ?*const anyopaque,
+        flags: FieldFlags,
+    ) FieldDescriptor {
+        return .{
+            .name = String.init(name),
+            .id = id,
+            .label = label,
+            .type = typ,
+            .offset = offset,
+            .descriptor = descriptor,
+            .default_value = default_value,
+            .flags = flags,
+            .recursive_descriptor = true,
+        };
+    }
+
     pub fn getDescriptor(fd: FieldDescriptor, comptime T: type) *const T {
         assert(fd.descriptor != null);
         return ptrAlignCast(*const T, fd.descriptor);
@@ -267,7 +293,8 @@ pub const MessageDescriptor = extern struct {
         const typename = @typeName(T);
         const names = common.splitOn([]const u8, typename, '.');
         const name = names[1];
-        const result: MessageDescriptor = .{
+
+        var result: MessageDescriptor = .{
             .magic = MESSAGE_DESCRIPTOR_MAGIC,
             .name = String.init(name),
             .zig_name = String.init(typename),
@@ -280,6 +307,15 @@ pub const MessageDescriptor = extern struct {
         };
         // TODO - audit and remove unnecessary checks
         comptime {
+            {
+                var fields = result.fields.items[0..result.fields.len].*;
+                for (fields) |field, i| {
+                    if (field.recursive_descriptor) {
+                        fields[i].descriptor = &result;
+                    }
+                }
+                result.fields = List(FieldDescriptor).init(&fields);
+            }
             const fields = result.fields;
             const field_ids = result.field_ids;
             const opt_field_ids = result.opt_field_ids;
@@ -352,7 +388,7 @@ pub const MessageDescriptor = extern struct {
 
 pub const Message = extern struct {
     descriptor: ?*const MessageDescriptor,
-    unknown_fields: ListMut(*MessageUnknownField) = ListMut(*MessageUnknownField).initEmpty(),
+    unknown_fields: ListMut(*MessageUnknownField) = ListMut(*MessageUnknownField){},
     optional_fields_present: u64 = 0,
 
     comptime {
@@ -521,7 +557,7 @@ pub const Message = extern struct {
                         list.deinit(allocator);
                     }
                 } else {
-                    const size = common.repeatedEleSize(field.type);
+                    const size = pb.protobuf.repeatedEleSize(field.type);
                     const L = ListMutScalar(u8);
                     var list = ptrAlignCast(*L, bytes + field.offset);
                     if (list.len != 0) {

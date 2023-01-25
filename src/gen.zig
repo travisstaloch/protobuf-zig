@@ -1,20 +1,25 @@
 const std = @import("std");
 const mem = std.mem;
 const bufPrint = std.fmt.bufPrint;
-const types = @import("types.zig");
-const common = @import("common.zig");
+const pb = @import("protobuf");
+const common = pb.common;
+const types = pb.types;
 const todo = common.todo;
 const Message = types.Message;
-const CodeGeneratorRequest = types.CodeGeneratorRequest;
-const DescriptorProto = types.DescriptorProto;
-const EnumDescriptorProto = types.EnumDescriptorProto;
-const FileDescriptorProto = types.FileDescriptorProto;
-const FieldDescriptorProto = types.FieldDescriptorProto;
-const OneofDescriptorProto = types.OneofDescriptorProto;
-const MessageDescriptor = types.MessageDescriptor;
-const EnumDescriptor = types.EnumDescriptor;
-const ArrayListMut = types.ArrayListMut;
-const String = types.String;
+const plugin = pb.plugin;
+const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
+const DescriptorProto = plugin.DescriptorProto;
+const EnumDescriptorProto = plugin.EnumDescriptorProto;
+const FileDescriptorProto = plugin.FileDescriptorProto;
+const FieldDescriptorProto = plugin.FieldDescriptorProto;
+const OneofDescriptorProto = plugin.OneofDescriptorProto;
+const pbtypes = pb.pbtypes;
+const MessageDescriptor = pbtypes.MessageDescriptor;
+const FieldDescriptor = pbtypes.FieldDescriptor;
+const EnumDescriptor = pbtypes.EnumDescriptor;
+const extern_types = pb.extern_types;
+const ArrayListMut = extern_types.ArrayListMut;
+const String = extern_types.String;
 const generator = @This();
 
 pub const GenError = error{
@@ -69,31 +74,6 @@ pub const Context = struct {
     }
 };
 
-fn fieldTypeNameHelp(
-    source_proto_file: *const FileDescriptorProto,
-    found_proto_file: *const FileDescriptorProto,
-    ctx: anytype,
-    comptime prefix: []const u8,
-    comptime suffix: []const u8,
-    name: String,
-) ![]const u8 {
-    // if same proto_file, don't need package
-    if (source_proto_file == found_proto_file)
-        return bufPrint(
-            &ctx.base.buf,
-            prefix ++ "{s}" ++ suffix,
-            .{name.slice()},
-        );
-    const package_names =
-        try filePackageNames(found_proto_file.name, &ctx.base.buf2);
-    // TODO maybe use found_proto_file.package somehow?
-    return bufPrint(
-        &ctx.base.buf,
-        prefix ++ "{s}.{s}" ++ suffix,
-        .{ package_names[0], name.slice() },
-    );
-}
-
 fn fieldTypeName(
     field: *const FieldDescriptorProto,
     source_proto_file: *const FileDescriptorProto,
@@ -101,39 +81,26 @@ fn fieldTypeName(
     comptime prefix: []const u8,
     comptime suffix: []const u8,
 ) ![]const u8 {
-    // find the namespaced name of this field's type
-    for (ctx.base.req.proto_file.slice()) |proto_file| {
-        if (field.type == .TYPE_MESSAGE) {
-            for (proto_file.message_type.slice()) |it| {
-                if (mem.endsWith(u8, field.type_name.slice(), it.name.slice()))
-                    return fieldTypeNameHelp(
-                        source_proto_file,
-                        proto_file,
-                        ctx,
-                        prefix,
-                        suffix,
-                        it.name,
-                    );
-            }
-        } else if (field.type == .TYPE_ENUM) {
-            for (proto_file.enum_type.slice()) |it| {
-                if (mem.endsWith(u8, field.type_name.slice(), it.name.slice()))
-                    return fieldTypeNameHelp(
-                        source_proto_file,
-                        proto_file,
-                        ctx,
-                        prefix,
-                        suffix,
-                        it.name,
-                    );
-            }
+    const package = source_proto_file.package.slice();
+    const field_typename = field.type_name.slice();
+    if (field_typename.len == 0) return error.MissingTypename;
+    if (source_proto_file.isPresentField(.package)) {
+        if (mem.startsWith(u8, field_typename[1..], package)) {
+            // std.debug.print("in package {}\n", .{source_proto_file.package});
+            const type_name = field_typename[2 + source_proto_file.package.len ..];
+            return bufPrint(
+                &ctx.base.buf,
+                prefix ++ "{s}" ++ suffix,
+                .{type_name},
+            );
         }
     }
-    return if (field.type_name.items[0] == '.')
-        field.type_name.items[1..field.type_name.len]
-    else
-        field.type_name.slice();
-    // return genErr("internal error missing type name '{s}'", .{field.type_name.slice()}, error.MissingTypeName);
+    const type_name = field_typename[1..];
+    return bufPrint(
+        &ctx.base.buf,
+        prefix ++ "{s}" ++ suffix,
+        .{type_name},
+    );
 }
 
 fn scalarFieldZigTypeName(field: *const FieldDescriptorProto) []const u8 {
@@ -187,15 +154,17 @@ fn scalarFieldZigDefault(field: *const FieldDescriptorProto) []const u8 {
 
 fn writeFieldType(field: *const FieldDescriptorProto, proto_file: *const FileDescriptorProto, ctx: anytype) !void {
     const is_list = field.label == .LABEL_REPEATED;
-    if (is_list) _ = try ctx.writer.write("ListMut(");
+    if (is_list) _ = try ctx.writer.write("ArrayListMut(");
     _ = try ctx.writer.write(switch (field.type) {
         .TYPE_ENUM,
         .TYPE_MESSAGE,
-        => try fieldTypeName(field, proto_file, ctx, "", ""),
+        => if (is_list)
+            try fieldTypeName(field, proto_file, ctx, "*", "")
+        else
+            try fieldTypeName(field, proto_file, ctx, "", ""),
         else => scalarFieldZigTypeName(field),
     });
-
-    if (is_list) try ctx.writer.writeByte(')');
+    if (is_list) _ = try ctx.writer.write(")");
 }
 
 pub fn genMessage(
@@ -203,7 +172,7 @@ pub fn genMessage(
     proto_file: *const FileDescriptorProto,
     ctx: anytype,
 ) !void {
-    // std.debug.print("message {}\n", .{message});
+    // std.debug.print("package {} message {}\n", .{ proto_file.package, message });
     try ctx.writer.print(
         \\
         \\pub const {s} = extern struct {{
@@ -216,13 +185,15 @@ pub fn genMessage(
         try writeFieldType(field, proto_file, ctx);
         _ = try ctx.writer.write(" = ");
         if (field.label == .LABEL_REPEATED) {
-            try writeFieldType(field, proto_file, ctx);
-            _ = try ctx.writer.write(".initEmpty()");
-        } else _ = try ctx.writer.write(switch (field.type) {
-            .TYPE_ENUM => "undefined",
-            .TYPE_MESSAGE => ".{}",
-            else => scalarFieldZigDefault(field),
-        });
+            _ = try ctx.writer.write(".{}");
+        } else switch (field.type) {
+            .TYPE_ENUM => _ = try ctx.writer.write("undefined"),
+            .TYPE_MESSAGE => {
+                try writeFieldType(field, proto_file, ctx);
+                _ = try ctx.writer.write(".init()");
+            },
+            else => _ = try ctx.writer.write(scalarFieldZigDefault(field)),
+        }
         _ = try ctx.writer.write(",\n");
     }
     // gen oneof union fields separately
@@ -347,9 +318,9 @@ pub fn genMessageTest(
 ) !void {
     try ctx.writer.print(
         \\
-        \\test {{ // dummy test just for typechecking
+        \\test {{ // dummy test for typechecking
         \\std.testing.log_level = .err; // suppress 'required field' warnings
-        \\var ctx = pb.context("", std.testing.allocator);
+        \\var ctx = pb.protobuf.context("", std.testing.allocator);
         \\const mm = ctx.deserialize(&{s}.descriptor) catch null;
         \\if (mm) |m| m.deinit(std.testing.allocator);
         \\}}
@@ -357,14 +328,19 @@ pub fn genMessageTest(
     , .{message.name.slice()});
 }
 
+fn normalizePackageName(package_name: []u8) void {
+    for (package_name) |c, i| {
+        if (c == '.' or c == '-' or c == '/')
+            package_name[i] = '_';
+    }
+}
+
 /// given filename = 'foo.x-yz.proto' returns ['foo_xyz', 'foo.xyz']
 fn filePackageNames(filename: String, buf: []u8) ![2][]const u8 {
     const prefix = common.splitOn([]const u8, filename.slice(), '.')[0];
     mem.copy(u8, buf, prefix);
     const package_name = buf[0..prefix.len];
-    for (package_name) |c, i| {
-        if (c == '.' or c == '-' or c == '/') buf[i] = '_';
-    }
+    normalizePackageName(package_name);
     return .{ package_name, prefix };
 }
 
@@ -386,10 +362,11 @@ pub fn genPrelude(
 ) !void {
     _ = try ctx.writer.write(
         \\const std = @import("std");
-        \\const pbtypes = @import("protobuf-types");
         \\const pb = @import("protobuf");
-        \\const String = pbtypes.String;
-        \\const ListMut = pbtypes.ListMut;
+        \\const extern_types = pb.extern_types;
+        \\const String = extern_types.String;
+        \\const ArrayListMut = extern_types.ArrayListMut;
+        \\const pbtypes = pb.pbtypes;
         \\const EnumMixins = pbtypes.EnumMixins;
         \\const MessageMixins = pbtypes.MessageMixins;
         \\const FieldDescriptor = pbtypes.FieldDescriptor;
@@ -436,9 +413,9 @@ pub fn gen(req: *const CodeGeneratorRequest, ctx: *Context) !void {
         try ctx.depmap.putNoClobber(ctx.alloc, proto_file.name.slice(), proto_file);
 
     // std.debug.print("req {}\n", .{req});
-    for (req.proto_file.slice()) |proto_file| {
+    for (req.file_to_generate.slice()) |file_to_gen| {
         const filename =
-            try filenameWithExtension(&ctx.buf, proto_file.name, pb_zig_ext);
+            try filenameWithExtension(&ctx.buf, file_to_gen, pb_zig_ext);
         const filepath =
             try std.fs.path.join(ctx.alloc, &.{ ctx.gen_path, filename });
         const dirname = std.fs.path.dirname(filepath) orelse unreachable;
@@ -448,6 +425,12 @@ pub fn gen(req: *const CodeGeneratorRequest, ctx: *Context) !void {
         defer file.close();
         // std.debug.print("filename {s} proto_file {}\n", .{ filename, proto_file });
         var with_writer = ctx.withWriter(file.writer());
+        const proto_file = ctx.depmap.get(file_to_gen.slice()) orelse
+            return genErr(
+            "file_to_gen '{s}' not found in req.proto_file",
+            .{file_to_gen.slice()},
+            error.MissingDependency,
+        );
         try genFile(proto_file, &with_writer);
     }
 }

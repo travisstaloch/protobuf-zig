@@ -2,12 +2,14 @@ const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
 
-const pb = @import("protobuf.zig");
-const types = @import("types.zig");
-const common = @import("common.zig");
+const pb = @import("protobuf");
+const types = pb.types;
+const common = pb.common;
+const plugin = pb.plugin;
+const protobuf = pb.protobuf;
 const ptrfmt = common.ptrfmt;
-const CodeGeneratorRequest = types.CodeGeneratorRequest;
-const FieldDescriptorProto = types.FieldDescriptorProto;
+const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
+const FieldDescriptorProto = plugin.FieldDescriptorProto;
 const Key = types.Key;
 
 const talloc = testing.allocator;
@@ -35,7 +37,7 @@ inline fn deserializeHelper(comptime T: type, protofile: []const u8, alloc: mem.
     return deserializeBytesHelper(T, bytes, alloc);
 }
 inline fn deserializeBytesHelper(comptime T: type, bytes: []const u8, alloc: mem.Allocator) !*T {
-    var ctx = pb.context(bytes, alloc);
+    var ctx = protobuf.context(bytes, alloc);
     const message = try ctx.deserialize(&T.descriptor);
     return try message.as(T);
 }
@@ -129,7 +131,7 @@ fn lengthEncode(comptime parts: anytype) []const u8 {
     const m = encodeMessage(parts);
     var buf: [10]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
-    try pb.writeVarint128(usize, m.len, fbs.writer(), .int);
+    try protobuf.writeVarint128(usize, m.len, fbs.writer(), .int);
     return buf[0..fbs.pos] ++ m;
 }
 
@@ -240,7 +242,7 @@ test "message deinit" {
 
 test "message missing required fields" {
     testing.log_level = .err;
-    const req = deserializeBytesHelper(types.UninterpretedOption.NamePart, "", talloc);
+    const req = deserializeBytesHelper(plugin.UninterpretedOption.NamePart, "", talloc);
     try testing.expectError(error.RequiredFieldMissing, req);
 }
 
@@ -259,4 +261,13 @@ test "readme" {
     // const person_message = try ctx.deserialize(&Person.descriptor);
     // var person = try person_message.as(Person);
     // person.id = 42;
+}
+
+test "message with map fields" {
+    const req = try deserializeHelper(CodeGeneratorRequest, "examples/map.proto", talloc);
+    defer req.base.deinit(talloc);
+    try testing.expectEqual(@as(usize, 0), req.base.unknown_fields.len);
+    try testing.expectEqual(@as(usize, 1), req.proto_file.len);
+    try testing.expectEqual(@as(usize, 1), req.proto_file.items[0].message_type.len);
+    try testing.expectEqual(@as(usize, 1), req.proto_file.items[0].message_type.items[0].nested_type.len);
 }

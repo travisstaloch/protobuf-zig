@@ -1,0 +1,4 @@
+syntax="proto3";
+message MapFields {
+  map<int32, int32> map_int32_int32 = 56;
+}

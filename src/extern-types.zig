@@ -3,9 +3,10 @@
 
 const std = @import("std");
 const mem = std.mem;
-const types = @import("types.zig");
-const common = @import("common.zig");
+const assert = std.debug.assert;
 const ptrfmt = common.ptrfmt;
+const pb = @import("protobuf");
+const common = pb.common;
 
 const extern_types = @This();
 
@@ -45,12 +46,33 @@ pub const String = extern struct {
     }
 };
 
+/// helper for repeated message types.
+/// checks that T is a pointer to struct and not pointer to String.
+/// returns types.ListTypeMut(T)
+pub fn ListMut(comptime T: type) type {
+    const tinfo = @typeInfo(T);
+    assert(tinfo == .Pointer);
+    const Child = tinfo.Pointer.child;
+    const cinfo = @typeInfo(Child);
+    assert(cinfo == .Struct);
+    assert(Child != String);
+    return ArrayListMut(T);
+}
+
+/// helper for repeated scalar types.
+/// checks that T is a String or other scalar type.
+/// returns ArrayListMut(T)
+pub fn ListMutScalar(comptime T: type) type {
+    assert(T == String or !std.meta.trait.isContainer(T));
+    return ArrayListMut(T);
+}
+
 /// similar to std.ArrayList but can be used in extern structs
 pub fn ArrayListMut(comptime T: type) type {
     return extern struct {
         len: usize = 0,
         cap: usize = 0,
-        items: [*]T,
+        items: [*]T = undefined,
 
         pub usingnamespace ListMixins(T, @This(), []T);
     };
@@ -61,7 +83,7 @@ pub fn ArrayList(comptime T: type) type {
     return extern struct {
         len: usize = 0,
         cap: usize = 0,
-        items: [*]const T,
+        items: [*]const T = undefined,
 
         pub usingnamespace ListMixins(T, @This(), []const T);
     };
@@ -74,16 +96,12 @@ pub fn ListMixins(comptime T: type, comptime Self: type, comptime Slice: type) t
         pub const Child = T;
         pub const Ptr = std.meta.fieldInfo(Self, .items).type;
         pub const alignment = common.ptrAlign(Ptr);
-        pub const list_sentinel_ptr = @intToPtr(Ptr, sentinel_pointer);
 
         pub fn init(items: Slice) Self {
             return .{ .items = items.ptr, .len = items.len, .cap = items.len };
         }
         pub fn deinit(l: Self, allocator: mem.Allocator) void {
             allocator.free(l.items[0..l.cap]);
-        }
-        pub fn initEmpty() Self {
-            return .{ .items = list_sentinel_ptr };
         }
 
         pub fn slice(self: Self) Slice {
@@ -131,7 +149,7 @@ pub fn ListMixins(comptime T: type, comptime Self: type, comptime Slice: type) t
 
         pub fn ensureTotalCapacity(l: *Self, allocator: mem.Allocator, new_cap: usize) !void {
             if (l.cap >= new_cap) return;
-            if (l.items == Self.list_sentinel_ptr) {
+            if (l.cap == 0) {
                 const items = try allocator.alignedAlloc(T, alignment, new_cap);
                 l.items = items.ptr;
                 l.cap = new_cap;
@@ -170,13 +188,13 @@ test "ArrayListMut" {
     const L = ArrayListMut;
     const count = 5;
     const xs = [1]void{{}} ** count;
-    var as = L(L(L(L(u8)))).initEmpty();
+    var as = L(L(L(L(u8)))){};
     for (xs) |_| {
-        var bs = L(L(L(u8))).initEmpty();
+        var bs = L(L(L(u8))){};
         for (xs) |_| {
-            var cs = L(L(u8)).initEmpty();
+            var cs = L(L(u8)){};
             for (xs) |_| {
-                var ds = L(u8).initEmpty();
+                var ds = L(u8){};
                 for (xs) |_| try ds.append(talloc, 0);
                 try cs.append(talloc, ds);
             }

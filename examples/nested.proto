@@ -1,0 +1,14 @@
+syntax="proto3";
+
+message Test1 {
+  int32 a = 1;
+}
+
+message Test3 {
+  Test1 c = 3;
+  int32 d = 4;
+}
+
+message Test4 {
+  repeated int32 d = 4 [packed=true];
+}

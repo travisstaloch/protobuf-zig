@@ -10,20 +10,22 @@
 const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
-// TODO make types.zig into a package
-const types = @import("../../../types.zig");
-const String = types.String;
-const ListMut = types.ListMut;
-const ListMutScalar = types.ListMutScalar;
-const MessageMixins = types.MessageMixins;
-const EnumMixins = types.EnumMixins;
-const Message = types.Message;
-const FieldDescriptor = types.FieldDescriptor;
-const BinaryData = types.BinaryData;
+const imports = @import("protobuf");
+const extern_types = imports.extern_types;
+const String = extern_types.String;
+const ListMut = extern_types.ListMut;
+const types = imports.types;
+const ListMutScalar = extern_types.ListMutScalar;
+const pbtypes = imports.pbtypes;
+const MessageMixins = pbtypes.MessageMixins;
+const EnumMixins = pbtypes.EnumMixins;
+const Message = pbtypes.Message;
+const FieldDescriptor = pbtypes.FieldDescriptor;
+const BinaryData = pbtypes.BinaryData;
 
 pub const UninterpretedOption = extern struct {
     base: Message,
-    name: ListMut(*NamePart) = ListMut(*NamePart).initEmpty(),
+    name: ListMut(*NamePart) = .{},
     identifier_value: String = String.initEmpty(),
     positive_int_value: u64 = 0,
     negative_int_value: i64 = 0,
@@ -147,7 +149,7 @@ pub const FieldOptions = extern struct {
     unverified_lazy: bool = false,
     deprecated: bool = false,
     weak: bool = false,
-    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
@@ -442,7 +444,7 @@ pub const FieldDescriptorProto = extern struct {
 pub const EnumValueOptions = extern struct {
     base: Message,
     deprecated: bool = false,
-    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
@@ -517,7 +519,7 @@ pub const EnumOptions = extern struct {
     base: Message,
     allow_alias: bool = false,
     deprecated: bool = false,
-    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
@@ -559,10 +561,10 @@ pub const EnumOptions = extern struct {
 pub const EnumDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
-    value: ListMut(*EnumValueDescriptorProto) = ListMut(*EnumValueDescriptorProto).initEmpty(),
+    value: ListMut(*EnumValueDescriptorProto) = .{},
     options: EnumOptions = EnumOptions.init(),
-    reserved_range: ListMut(*EnumReservedRange) = ListMut(*EnumReservedRange).initEmpty(),
-    reserved_name: ListMutScalar(String) = ListMutScalar(String).initEmpty(),
+    reserved_range: ListMut(*EnumReservedRange) = .{},
+    reserved_name: ListMutScalar(String) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
@@ -653,7 +655,7 @@ pub const EnumDescriptorProto = extern struct {
 
 pub const ExtensionRangeOptions = extern struct {
     base: Message,
-    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
@@ -672,7 +674,7 @@ pub const ExtensionRangeOptions = extern struct {
 };
 pub const OneofOptions = extern struct {
     base: Message,
-    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
@@ -727,7 +729,7 @@ pub const MessageOptions = extern struct {
     no_standard_descriptor_accessor: bool = false,
     deprecated: bool = false,
     map_entry: bool = false,
-    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
@@ -791,15 +793,15 @@ pub const MessageOptions = extern struct {
 pub const DescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
-    field: ListMut(*FieldDescriptorProto) = ListMut(*FieldDescriptorProto).initEmpty(),
-    extension: ListMut(*FieldDescriptorProto) = ListMut(*FieldDescriptorProto).initEmpty(),
-    nested_type: types.ArrayListMut(*DescriptorProto) = .{ .items = types.ArrayListMut(*DescriptorProto).list_sentinel_ptr }, // workaround for 'dependency loop'
-    enum_type: ListMut(*EnumDescriptorProto) = ListMut(*EnumDescriptorProto).initEmpty(),
-    extension_range: ListMut(*ExtensionRange) = ListMut(*ExtensionRange).initEmpty(),
-    oneof_decl: ListMut(*OneofDescriptorProto) = ListMut(*OneofDescriptorProto).initEmpty(),
+    field: ListMut(*FieldDescriptorProto) = .{},
+    extension: ListMut(*FieldDescriptorProto) = .{},
+    nested_type: extern_types.ArrayListMut(*DescriptorProto) = .{},
+    enum_type: ListMut(*EnumDescriptorProto) = .{},
+    extension_range: ListMut(*ExtensionRange) = .{},
+    oneof_decl: ListMut(*OneofDescriptorProto) = .{},
     options: MessageOptions = MessageOptions.init(),
-    reserved_range: ListMut(*ReservedRange) = ListMut(*ReservedRange).initEmpty(),
-    reserved_name: ListMutScalar(String) = ListMutScalar(String).initEmpty(),
+    reserved_range: ListMut(*ReservedRange) = .{},
+    reserved_name: ListMutScalar(String) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
@@ -907,9 +909,10 @@ pub const DescriptorProto = extern struct {
             null,
             0,
         ),
-        FieldDescriptor.init(
+        // workaround for 'dependency loop'
+        FieldDescriptor.initRecursive(
             "nested_type",
-            std.math.maxInt(u32) - 3, // workaround for 'dependency loop'
+            3,
             .LABEL_REPEATED,
             .TYPE_MESSAGE,
             @offsetOf(DescriptorProto, "nested_type"),
@@ -984,7 +987,7 @@ pub const MethodOptions = extern struct {
     base: Message,
     deprecated: bool = false,
     idempotency_level: IdempotencyLevel = undefined,
-    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
@@ -1112,7 +1115,7 @@ pub const MethodDescriptorProto = extern struct {
 pub const ServiceOptions = extern struct {
     base: Message,
     deprecated: bool = false,
-    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = .{},
 
     pub const deprecated__default_value: c_int = 0;
     pub usingnamespace MessageMixins(@This());
@@ -1144,7 +1147,7 @@ pub const ServiceOptions = extern struct {
 pub const ServiceDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
-    method: ListMut(*MethodDescriptorProto) = ListMut(*MethodDescriptorProto).initEmpty(),
+    method: ListMut(*MethodDescriptorProto) = .{},
     options: ServiceOptions = ServiceOptions.init(),
 
     pub usingnamespace MessageMixins(@This());
@@ -1205,7 +1208,7 @@ pub const FileOptions = extern struct {
     php_namespace: String = String.initEmpty(),
     php_metadata_namespace: String = String.initEmpty(),
     ruby_package: String = String.initEmpty(),
-    uninterpreted_option: ListMut(*UninterpretedOption) = ListMut(*UninterpretedOption).initEmpty(),
+    uninterpreted_option: ListMut(*UninterpretedOption) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
@@ -1442,17 +1445,17 @@ pub const FileOptions = extern struct {
 
 pub const SourceCodeInfo = extern struct {
     base: Message,
-    location: ListMut(*Location) = ListMut(*Location).initEmpty(),
+    location: ListMut(*Location) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
     pub const Location = extern struct {
         base: Message,
-        path: ListMutScalar(i32) = ListMutScalar(i32).initEmpty(),
-        span: ListMutScalar(i32) = ListMutScalar(i32).initEmpty(),
+        path: ListMutScalar(i32) = .{},
+        span: ListMutScalar(i32) = .{},
         leading_comments: String = String.initEmpty(),
         trailing_comments: String = String.initEmpty(),
-        leading_detached_comments: ListMutScalar(String) = ListMutScalar(String).initEmpty(),
+        leading_detached_comments: ListMutScalar(String) = .{},
 
         pub usingnamespace MessageMixins(@This());
 
@@ -1527,13 +1530,13 @@ pub const FileDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
     package: String = String.initEmpty(),
-    dependency: ListMutScalar(String) = ListMutScalar(String).initEmpty(),
-    public_dependency: ListMutScalar(i32) = ListMutScalar(i32).initEmpty(),
-    weak_dependency: ListMutScalar(i32) = ListMutScalar(i32).initEmpty(),
-    message_type: ListMut(*DescriptorProto) = ListMut(*DescriptorProto).initEmpty(),
-    enum_type: ListMut(*EnumDescriptorProto) = ListMut(*EnumDescriptorProto).initEmpty(),
-    service: ListMut(*ServiceDescriptorProto) = ListMut(*ServiceDescriptorProto).initEmpty(),
-    extension: ListMut(*FieldDescriptorProto) = ListMut(*FieldDescriptorProto).initEmpty(),
+    dependency: ListMutScalar(String) = .{},
+    public_dependency: ListMutScalar(i32) = .{},
+    weak_dependency: ListMutScalar(i32) = .{},
+    message_type: ListMut(*DescriptorProto) = .{},
+    enum_type: ListMut(*EnumDescriptorProto) = .{},
+    service: ListMut(*ServiceDescriptorProto) = .{},
+    extension: ListMut(*FieldDescriptorProto) = .{},
     options: FileOptions = FileOptions.init(),
     source_code_info: SourceCodeInfo = SourceCodeInfo.init(),
     syntax: String = String.initEmpty(),
@@ -1684,7 +1687,7 @@ pub const FileDescriptorProto = extern struct {
 
 pub const FileDescriptorSet = extern struct {
     base: Message,
-    file: ListMut(*FileDescriptorProto) = ListMut(*FileDescriptorProto).initEmpty(),
+    file: ListMut(*FileDescriptorProto) = .{},
 
     pub usingnamespace MessageMixins(@This());
 
@@ -1770,9 +1773,9 @@ pub const Version = extern struct {
 
 pub const CodeGeneratorRequest = extern struct {
     base: Message,
-    file_to_generate: ListMutScalar(String) = ListMutScalar(String).initEmpty(),
+    file_to_generate: ListMutScalar(String) = .{},
     parameter: String = String.initEmpty(),
-    proto_file: ListMut(*FileDescriptorProto) = ListMut(*FileDescriptorProto).initEmpty(),
+    proto_file: ListMut(*FileDescriptorProto) = .{},
     compiler_version: Version = Version.init(),
 
     comptime {

@@ -41,7 +41,7 @@
 // plugin should be named "protoc-gen-$NAME", and will then be used when the
 // flag "--${NAME}_out" is passed to protoc.
 
-syntax = "proto3";
+syntax = "proto2";
 
 package google.protobuf.compiler;
 option java_package = "com.google.protobuf.compiler";
@@ -53,12 +53,12 @@ import "google/protobuf/descriptor.proto";
 
 // The version number of protocol compiler.
 message Version {
-  int32 major = 1;
-  int32 minor = 2;
-  int32 patch = 3;
+  optional int32 major = 1;
+  optional int32 minor = 2;
+  optional int32 patch = 3;
   // A suffix for alpha, beta or rc release, e.g., "alpha-1", "rc2". It should
   // be empty for mainline stable releases.
-  string suffix = 4;
+  optional string suffix = 4;
 }
 
 // An encoded CodeGeneratorRequest is written to the plugin's stdin.
@@ -69,7 +69,7 @@ message CodeGeneratorRequest {
   repeated string file_to_generate = 1;
 
   // The generator parameter passed on the command-line.
-  string parameter = 2;
+  optional string parameter = 2;
 
   // FileDescriptorProtos for all files in files_to_generate and everything
   // they import.  The files will appear in topological order, so each file
@@ -88,7 +88,7 @@ message CodeGeneratorRequest {
   repeated FileDescriptorProto proto_file = 15;
 
   // The version number of protocol compiler.
-  Version compiler_version = 3;
+  optional Version compiler_version = 3;
 
 }
 
@@ -102,11 +102,11 @@ message CodeGeneratorResponse {
   // problem in protoc itself -- such as the input CodeGeneratorRequest being
   // unparseable -- should be reported by writing a message to stderr and
   // exiting with a non-zero status code.
-  string error = 1;
+  optional string error = 1;
 
   // A bitmask of supported features that the code generator supports.
   // This is a bitwise "or" of values from the Feature enum.
-  uint64 supported_features = 2;
+  optional uint64 supported_features = 2;
 
   // Sync with code_generator.h.
   enum Feature {
@@ -127,7 +127,7 @@ message CodeGeneratorResponse {
     // files need not reside completely in memory at one time.  Note that as of
     // this writing protoc does not optimize for this -- it will read the entire
     // CodeGeneratorResponse before writing files to disk.
-    string name = 1;
+    optional string name = 1;
 
     // If non-empty, indicates that the named file should already exist, and the
     // content here is to be inserted into that file at a defined insertion
@@ -166,15 +166,15 @@ message CodeGeneratorResponse {
     // command line.
     //
     // If |insertion_point| is present, |name| must also be present.
-    string insertion_point = 2;
+    optional string insertion_point = 2;
 
     // The file contents.
-    string content = 15;
+    optional string content = 15;
 
     // Information describing the file content being inserted. If an insertion
     // point is used, this information will be appropriately offset and inserted
     // into the code generation metadata for the generated files.
-    GeneratedCodeInfo generated_code_info = 16;
+    optional GeneratedCodeInfo generated_code_info = 16;
   }
   repeated File file = 15;
 }
