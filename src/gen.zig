@@ -1,11 +1,9 @@
 const std = @import("std");
 const mem = std.mem;
-const bufPrint = std.fmt.bufPrint;
 const pb = @import("protobuf");
 const common = pb.common;
 const types = pb.types;
 const todo = common.todo;
-const Message = types.Message;
 const plugin = pb.plugin;
 const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
 const DescriptorProto = plugin.DescriptorProto;
@@ -14,13 +12,11 @@ const FileDescriptorProto = plugin.FileDescriptorProto;
 const FieldDescriptorProto = plugin.FieldDescriptorProto;
 const OneofDescriptorProto = plugin.OneofDescriptorProto;
 const pbtypes = pb.pbtypes;
-const MessageDescriptor = pbtypes.MessageDescriptor;
 const FieldDescriptor = pbtypes.FieldDescriptor;
 const EnumDescriptor = pbtypes.EnumDescriptor;
 const extern_types = pb.extern_types;
-const ArrayListMut = extern_types.ArrayListMut;
 const String = extern_types.String;
-const generator = @This();
+const top_level = @This();
 
 pub const GenError = error{
     MissingDependency,
@@ -51,13 +47,12 @@ pub const Context = struct {
     gen_path: []const u8,
     alloc: mem.Allocator,
     req: *const CodeGeneratorRequest,
-    buf: [std.fs.MAX_NAME_BYTES]u8 = undefined,
-    buf2: [std.fs.MAX_NAME_BYTES]u8 = undefined,
-    /// map all req.proto_file from proto_file.name (filename) to proto_file
+    buf: [256]u8 = undefined,
+    /// map from req.proto_file.(file)name to req.proto_file
     depmap: std.StringHashMapUnmanaged(*const FileDescriptorProto) = .{},
 
     pub fn gen(ctx: *Self, req: *const CodeGeneratorRequest) !void {
-        return generator.gen(req, ctx);
+        return top_level.gen(req, ctx);
     }
 
     pub fn withWriter(ctx: Self, writer: anytype) WithWriter(@TypeOf(writer)) {
@@ -74,33 +69,56 @@ pub const Context = struct {
     }
 };
 
-fn fieldTypeName(
-    field: *const FieldDescriptorProto,
-    source_proto_file: *const FileDescriptorProto,
+fn writeFieldTypeNameHelp(
+    file_identifier: []const u8,
+    type_name: []const u8,
     ctx: anytype,
     comptime prefix: []const u8,
     comptime suffix: []const u8,
-) ![]const u8 {
-    const package = source_proto_file.package.slice();
-    const field_typename = field.type_name.slice();
-    if (field_typename.len == 0) return error.MissingTypename;
-    if (source_proto_file.isPresentField(.package)) {
-        if (mem.startsWith(u8, field_typename[1..], package)) {
-            // std.debug.print("in package {}\n", .{source_proto_file.package});
-            const type_name = field_typename[2 + source_proto_file.package.len ..];
-            return bufPrint(
-                &ctx.base.buf,
-                prefix ++ "{s}" ++ suffix,
-                .{type_name},
-            );
-        }
-    }
-    const type_name = field_typename[1..];
-    return bufPrint(
-        &ctx.base.buf,
+) !void {
+    if (file_identifier.len > 0) try ctx.writer.print(
+        prefix ++ "{s}.{s}" ++ suffix,
+        .{ file_identifier, type_name },
+    ) else try ctx.writer.print(
         prefix ++ "{s}" ++ suffix,
         .{type_name},
     );
+}
+
+fn writeFieldTypeName(
+    field: *const FieldDescriptorProto,
+    proto_file: *const FileDescriptorProto,
+    ctx: anytype,
+    comptime prefix: []const u8,
+    comptime suffix: []const u8,
+) !void {
+    const package = proto_file.package.slice();
+    const field_typename = field.type_name.slice();
+    if (field_typename.len == 0) return error.MissingTypename;
+    const file_identifier = outer: for (ctx.base.req.proto_file.slice()) |pf| {
+        if (pf == proto_file) continue;
+        for (pf.message_type.slice()) |it| {
+            if (mem.endsWith(u8, field_typename, it.name.slice())) {
+                const names = try filePackageNames(pf.name, &ctx.base.buf);
+                break :outer names[0];
+            }
+        }
+        for (pf.enum_type.slice()) |it| {
+            if (mem.endsWith(u8, field_typename, it.name.slice())) {
+                const names = try filePackageNames(pf.name, &ctx.base.buf);
+                break :outer names[0];
+            }
+        }
+    } else "";
+    if (proto_file.isPresentField(.package)) {
+        if (mem.startsWith(u8, field_typename[1..], package)) {
+            const type_name = field_typename[2 + proto_file.package.len ..];
+            try writeFieldTypeNameHelp(file_identifier, type_name, ctx, prefix, suffix);
+        }
+    }
+
+    const type_name = field_typename[1..];
+    try writeFieldTypeNameHelp(file_identifier, type_name, ctx, prefix, suffix);
 }
 
 fn scalarFieldZigTypeName(field: *const FieldDescriptorProto) []const u8 {
@@ -119,11 +137,8 @@ fn scalarFieldZigTypeName(field: *const FieldDescriptorProto) []const u8 {
         .TYPE_SFIXED64 => "i64",
         .TYPE_SINT32 => "i32",
         .TYPE_SINT64 => "i64",
-        .TYPE_MESSAGE => unreachable,
-        .TYPE_ENUM => unreachable,
-        .TYPE_ERROR => unreachable,
-        .TYPE_GROUP => unreachable,
         .TYPE_BYTES => "pbtypes.BinaryData",
+        .TYPE_MESSAGE, .TYPE_ENUM, .TYPE_ERROR, .TYPE_GROUP => unreachable,
     };
 }
 
@@ -144,26 +159,23 @@ fn scalarFieldZigDefault(field: *const FieldDescriptorProto) []const u8 {
         .TYPE_SINT64,
         => "0",
         .TYPE_BOOL => "false",
-        .TYPE_MESSAGE => unreachable,
-        .TYPE_ENUM => unreachable,
-        .TYPE_ERROR => unreachable,
-        .TYPE_GROUP => unreachable,
         .TYPE_BYTES => ".{}",
+        .TYPE_MESSAGE, .TYPE_ENUM, .TYPE_ERROR, .TYPE_GROUP => unreachable,
     };
 }
 
 fn writeFieldType(field: *const FieldDescriptorProto, proto_file: *const FileDescriptorProto, ctx: anytype) !void {
     const is_list = field.label == .LABEL_REPEATED;
     if (is_list) _ = try ctx.writer.write("ArrayListMut(");
-    _ = try ctx.writer.write(switch (field.type) {
+    switch (field.type) {
         .TYPE_ENUM,
         .TYPE_MESSAGE,
         => if (is_list)
-            try fieldTypeName(field, proto_file, ctx, "*", "")
+            try writeFieldTypeName(field, proto_file, ctx, "*", "")
         else
-            try fieldTypeName(field, proto_file, ctx, "", ""),
-        else => scalarFieldZigTypeName(field),
-    });
+            try writeFieldTypeName(field, proto_file, ctx, "", ""),
+        else => _ = try ctx.writer.write(scalarFieldZigTypeName(field)),
+    }
     if (is_list) _ = try ctx.writer.write(")");
 }
 
@@ -172,13 +184,14 @@ pub fn genMessage(
     proto_file: *const FileDescriptorProto,
     ctx: anytype,
 ) !void {
-    // std.debug.print("package {} message {}\n", .{ proto_file.package, message });
     try ctx.writer.print(
         \\
         \\pub const {s} = extern struct {{
         \\base: Message,
         \\
     , .{message.name.slice()});
+
+    // gen fields
     for (message.field.slice()) |field| {
         if (field.isPresentField(.oneof_index)) continue;
         try ctx.writer.print("{s}: ", .{field.name.slice()});
@@ -196,7 +209,8 @@ pub fn genMessage(
         }
         _ = try ctx.writer.write(",\n");
     }
-    // gen oneof union fields separately
+
+    // gen oneof union fields separately because they are grouped by field.oneof_index
     for (message.oneof_decl.slice()) |oneof, i| {
         try ctx.writer.print("{s}: extern union {{\n", .{oneof.name.slice()});
         for (message.field.slice()) |field| {
@@ -212,25 +226,19 @@ pub fn genMessage(
     // gen default value decls
     for (message.field.slice()) |field| {
         if (field.isPresentField(.default_value)) {
-            // WARNING - do not change the order of 'type_name' and 'default',
-            // otherwise ctx.base.buf will get clobbered
-            const type_name_ =
-                try fieldTypeName(field, proto_file, ctx, "", "");
-            mem.copy(u8, &ctx.base.buf2, type_name_);
-            const type_name = ctx.base.buf2[0..type_name_.len];
-
-            const default = switch (field.type) {
-                .TYPE_ENUM => //
-                try bufPrint(&ctx.base.buf, ".{s}", .{field.default_value.slice()}),
-                else => todo("default {s}", .{field.type.tagName()}),
-            };
             try ctx.writer.print(
-                \\pub const {s}_default: {s} = {s};
-                \\
-            , .{ field.name.slice(), type_name, default });
+                \\pub const {s}_default: 
+            , .{field.name.slice()});
+            try writeFieldTypeName(field, proto_file, ctx, "", "");
+            switch (field.type) {
+                .TYPE_ENUM => //
+                try ctx.writer.print(" = .{s};", .{field.default_value.slice()}),
+                else => todo("default {s}", .{field.type.tagName()}),
+            }
         }
     }
 
+    // gen field descriptors
     _ = try ctx.writer.write(
         \\
         \\pub usingnamespace MessageMixins(@This());
@@ -240,21 +248,7 @@ pub fn genMessage(
     );
 
     for (message.field.slice()) |field| {
-        const descriptor: []const u8 = switch (field.type) {
-            .TYPE_MESSAGE,
-            .TYPE_ENUM,
-            => try fieldTypeName(field, proto_file, ctx, "&", ".descriptor"),
-            else => "null",
-        };
-        const default = if (field.isPresentField(.default_value))
-            try bufPrint(&ctx.base.buf2, "&{s}_default", .{field.name.slice()})
-        else
-            "null";
         const is_oneof = field.isPresentField(.oneof_index);
-        const flags = if (is_oneof)
-            "@as(u8, 1)<<@enumToInt(FieldFlag.FLAG_ONEOF)"
-        else
-            "0";
         try ctx.writer.print(
             \\FieldDescriptor.init(
             \\"{s}",
@@ -262,11 +256,6 @@ pub fn genMessage(
             \\.{s},
             \\.{s},
             \\ @offsetOf({s}, "{s}"),
-            \\{s},
-            \\{s},
-            \\{s},
-            \\),
-            \\
         , .{
             field.name.slice(),
             field.number,
@@ -277,13 +266,36 @@ pub fn genMessage(
                 message.oneof_decl.items[@intCast(usize, field.oneof_index)].name.slice()
             else
                 field.name.slice(),
-            descriptor,
-            default,
-            flags,
+        });
+
+        // descriptor arg
+        switch (field.type) {
+            .TYPE_MESSAGE,
+            .TYPE_ENUM,
+            => try writeFieldTypeName(field, proto_file, ctx, "&", ".descriptor,\n"),
+            else => _ = try ctx.writer.write("null,\n"),
+        }
+
+        // default value arg
+        if (field.isPresentField(.default_value))
+            try ctx.writer.print("&{s}_default,", .{field.name.slice()})
+        else
+            _ = try ctx.writer.write("null,\n");
+
+        // field flags arg
+        try ctx.writer.print(
+            \\{s},
+            \\),
+            \\
+        , .{
+            if (is_oneof)
+                "@as(u8, 1)<<@enumToInt(FieldFlag.FLAG_ONEOF)"
+            else
+                "0",
         });
     }
-
     _ = try ctx.writer.write("};\n");
+    // --- end gen field descriptors
 
     for (message.nested_type.slice()) |nested|
         try genMessage(nested, proto_file, ctx);
@@ -298,8 +310,14 @@ pub fn genEnum(
     enumproto: *const EnumDescriptorProto,
     ctx: anytype,
 ) !void {
-    // FIXME calculate Int size - don't just use u8 here
-    try ctx.writer.print("pub const {s} = enum(u8) {{\n", .{enumproto.name.slice()});
+    const bits = @max(8, try std.math.ceilPowerOfTwo(
+        usize,
+        @max(enumproto.value.len, 1),
+    ));
+    try ctx.writer.print(
+        "pub const {s} = enum(u{}) {{\n",
+        .{ enumproto.name.slice(), bits },
+    );
     for (enumproto.value.slice()) |value| {
         try ctx.writer.print("{s} = {},\n", .{ value.name.slice(), value.number });
     }
@@ -346,14 +364,10 @@ fn filePackageNames(filename: String, buf: []u8) ![2][]const u8 {
 
 pub fn genImport(dep: String, ctx: anytype) !void {
     const names = try filePackageNames(dep, &ctx.base.buf);
-    const package_name = names[0];
-    try ctx.writer.print("const {s} = @import(\"", .{package_name});
-    const filename = try bufPrint(
-        &ctx.base.buf,
-        "{s}.{s}",
-        .{ names[1], pb_zig_ext },
+    try ctx.writer.print(
+        "const {s} = @import(\"{s}.{s}\");\n",
+        .{ names[0], names[1], pb_zig_ext },
     );
-    try ctx.writer.print("{s}\");\n", .{filename});
 }
 
 pub fn genPrelude(
@@ -404,7 +418,7 @@ pub fn genFile(
 const pb_zig_ext = "pb.zig";
 fn filenameWithExtension(buf: []u8, filename: String, extension: []const u8) ![]const u8 {
     const split_filename = common.splitOn([]const u8, filename.slice(), '.');
-    return bufPrint(buf, "{s}.{s}", .{ split_filename[0], extension });
+    return std.fmt.bufPrint(buf, "{s}.{s}", .{ split_filename[0], extension });
 }
 
 pub fn gen(req: *const CodeGeneratorRequest, ctx: *Context) !void {
@@ -412,7 +426,6 @@ pub fn gen(req: *const CodeGeneratorRequest, ctx: *Context) !void {
     for (req.proto_file.slice()) |proto_file|
         try ctx.depmap.putNoClobber(ctx.alloc, proto_file.name.slice(), proto_file);
 
-    // std.debug.print("req {}\n", .{req});
     for (req.file_to_generate.slice()) |file_to_gen| {
         const filename =
             try filenameWithExtension(&ctx.buf, file_to_gen, pb_zig_ext);

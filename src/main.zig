@@ -2,8 +2,6 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const pb = @import("protobuf");
-const types = pb.types;
-const common = pb.common;
 const gen = @import("gen.zig");
 pub const CodeGeneratorRequest = pb.plugin.CodeGeneratorRequest;
 

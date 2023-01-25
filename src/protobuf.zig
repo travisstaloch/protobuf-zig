@@ -4,23 +4,20 @@ const Allocator = mem.Allocator;
 const assert = std.debug.assert;
 const pb = @import("protobuf");
 const plugin = pb.plugin;
-const Message = pb.pbtypes.Message;
-const MessageDescriptor = pb.pbtypes.MessageDescriptor;
 const types = pb.types;
 const WireType = types.WireType;
-const BinaryType = types.BinaryType;
-const Label = types.Label;
-const FieldFlag = FieldDescriptor.FieldFlag;
+const Key = types.Key;
 const extern_types = pb.extern_types;
 const List = extern_types.ArrayList;
 const ListMut = extern_types.ArrayListMut;
-const IntRange = types.IntRange;
+const String = extern_types.String;
 const pbtypes = pb.pbtypes;
+const Message = pbtypes.Message;
+const MessageDescriptor = pbtypes.MessageDescriptor;
 const FieldDescriptor = pbtypes.FieldDescriptor;
+const FieldFlag = FieldDescriptor.FieldFlag;
 const FieldDescriptorProto = plugin.FieldDescriptorProto;
 const BinaryData = pbtypes.BinaryData;
-const String = pb.extern_types.String;
-const Key = types.Key;
 const common = pb.common;
 const ptrAlignCast = common.ptrAlignCast;
 const ptrfmt = common.ptrfmt;
@@ -128,7 +125,7 @@ pub fn repeatedEleSize(t: FieldDescriptorProto.Type) u8 {
         .TYPE_BOOL => @sizeOf(bool),
         .TYPE_STRING => @sizeOf(pb.extern_types.String),
         .TYPE_MESSAGE => @sizeOf(*Message),
-        .TYPE_BYTES => @sizeOf(pbtypes.BinaryData),
+        .TYPE_BYTES => @sizeOf(BinaryData),
         .TYPE_ERROR, .TYPE_GROUP => unreachable,
     };
 }
@@ -267,7 +264,7 @@ pub const Protobuf = struct {
                     .TYPE_DOUBLE,
                     => @memcpy(field_bytes, default, 8),
                     .TYPE_BOOL => @memcpy(field_bytes, default, @sizeOf(bool)),
-                    .TYPE_BYTES => @memcpy(field_bytes, default, @sizeOf(pbtypes.BinaryData)),
+                    .TYPE_BYTES => @memcpy(field_bytes, default, @sizeOf(BinaryData)),
                     .TYPE_STRING,
                     .TYPE_MESSAGE,
                     => { //
@@ -582,7 +579,7 @@ pub const Protobuf = struct {
             var mfield: ?*const FieldDescriptor = null;
             if (last_field == null or last_field.?.id != key.field_id) {
                 if (intRangeLookup(desc.field_ids, key.field_id)) |field_index| {
-                    std.log.info("(scan) found field_id={} at index={}", .{ key.field_id, field_index });
+                    std.log.debug("(scan) found field_id={} at index={}", .{ key.field_id, field_index });
                     mfield = &desc.fields.items[field_index];
                     last_field = mfield;
                     last_field_index = @intCast(u7, field_index);

@@ -1,8 +1,4 @@
 const std = @import("std");
-const assert = std.debug.assert;
-const plugin = @import("plugin");
-const FieldDescriptorProto = plugin.FieldDescriptorProto;
-const Message = plugin.Message;
 
 pub fn IntegerBitset(comptime len: usize) type {
     const l = std.math.ceilPowerOfTwo(usize, @max(len, 1)) catch

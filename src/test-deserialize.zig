@@ -4,10 +4,9 @@ const testing = std.testing;
 
 const pb = @import("protobuf");
 const types = pb.types;
-const common = pb.common;
 const plugin = pb.plugin;
 const protobuf = pb.protobuf;
-const ptrfmt = common.ptrfmt;
+const ptrfmt = pb.common.ptrfmt;
 const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
 const FieldDescriptorProto = plugin.FieldDescriptorProto;
 const Key = types.Key;
