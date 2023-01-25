@@ -146,11 +146,13 @@ pub fn MessageMixins(comptime Self: type) type {
         pub const init = Init(Self);
         pub const initBytes = InitBytes(Self);
         pub const format = Format(Self);
-        pub const setPresentField = SetPresentField(Self);
-        pub const isPresentField = IsPresentField(Self);
         pub const field_ids = fieldIds(&Self.field_descriptors);
         pub const opt_field_ids = optionalFieldIds(&Self.field_descriptors);
         pub const descriptor = MessageDescriptor.init(Self);
+        // TODO rename setPresentField() => setPresent()
+        pub const setPresentField = SetPresentField(Self);
+        // TODO rename isPresentField() => has()
+        pub const isPresentField = IsPresentField(Self);
     };
 }
 

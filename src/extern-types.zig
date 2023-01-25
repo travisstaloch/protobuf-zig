@@ -13,13 +13,13 @@ const extern_types = @This();
 // comment/uncomment this decl to toggle
 // const fmtdebug = true;
 
-// a zero terminated slice of bytes
+/// an extern slice of bytes
 pub const String = extern struct {
     len: usize,
     items: [*]const u8,
 
     var empty_arr = "".*;
-    pub const empty: String = String.init(&empty_arr); // .{ .items = &empty_arr, .len = 0 };
+    pub const empty: String = String.init(&empty_arr);
 
     pub fn init(s: []const u8) String {
         return .{ .items = s.ptr, .len = s.len };
@@ -48,7 +48,7 @@ pub const String = extern struct {
 
 /// helper for repeated message types.
 /// checks that T is a pointer to struct and not pointer to String.
-/// returns types.ListTypeMut(T)
+/// returns types.ArrayListMut(T)
 pub fn ListMut(comptime T: type) type {
     const tinfo = @typeInfo(T);
     assert(tinfo == .Pointer);
@@ -60,11 +60,11 @@ pub fn ListMut(comptime T: type) type {
 }
 
 /// helper for repeated scalar types.
-/// checks that T is a String or other scalar type.
-/// returns ArrayListMut(T)
+/// checks that T is a String non container type.
+/// returns ArrayList(T)
 pub fn ListMutScalar(comptime T: type) type {
     assert(T == String or !std.meta.trait.isContainer(T));
-    return ArrayListMut(T);
+    return ArrayList(T);
 }
 
 /// similar to std.ArrayList but can be used in extern structs
@@ -78,7 +78,8 @@ pub fn ArrayListMut(comptime T: type) type {
     };
 }
 
-/// similar to std.ArrayList but can be used in extern structs
+/// similar to std.ArrayList but can be used in extern structs.
+/// a const version of ArrayListMut.
 pub fn ArrayList(comptime T: type) type {
     return extern struct {
         len: usize = 0,
@@ -88,8 +89,6 @@ pub fn ArrayList(comptime T: type) type {
         pub usingnamespace ListMixins(T, @This(), []const T);
     };
 }
-
-pub const sentinel_pointer = 0xdead_0000_0000;
 
 pub fn ListMixins(comptime T: type, comptime Self: type, comptime Slice: type) type {
     return extern struct {

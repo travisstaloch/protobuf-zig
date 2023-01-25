@@ -70,11 +70,11 @@ pub const Context = struct {
 };
 
 fn writeFieldTypeNameHelp(
+    comptime prefix: []const u8,
     file_identifier: []const u8,
+    comptime suffix: []const u8,
     type_name: []const u8,
     ctx: anytype,
-    comptime prefix: []const u8,
-    comptime suffix: []const u8,
 ) !void {
     if (file_identifier.len > 0) try ctx.writer.print(
         prefix ++ "{s}.{s}" ++ suffix,
@@ -86,15 +86,16 @@ fn writeFieldTypeNameHelp(
 }
 
 fn writeFieldTypeName(
+    comptime prefix: []const u8,
     field: *const FieldDescriptorProto,
+    comptime suffix: []const u8,
     proto_file: *const FileDescriptorProto,
     ctx: anytype,
-    comptime prefix: []const u8,
-    comptime suffix: []const u8,
 ) !void {
     const package = proto_file.package.slice();
     const field_typename = field.type_name.slice();
     if (field_typename.len == 0) return error.MissingTypename;
+    // TODO: exact match. replace endsWith() with eql()/check leading '.'
     const file_identifier = outer: for (ctx.base.req.proto_file.slice()) |pf| {
         if (pf == proto_file) continue;
         for (pf.message_type.slice()) |it| {
@@ -113,12 +114,12 @@ fn writeFieldTypeName(
     if (proto_file.isPresentField(.package)) {
         if (mem.startsWith(u8, field_typename[1..], package)) {
             const type_name = field_typename[2 + proto_file.package.len ..];
-            try writeFieldTypeNameHelp(file_identifier, type_name, ctx, prefix, suffix);
+            try writeFieldTypeNameHelp(prefix, file_identifier, suffix, type_name, ctx);
         }
     }
 
     const type_name = field_typename[1..];
-    try writeFieldTypeNameHelp(file_identifier, type_name, ctx, prefix, suffix);
+    try writeFieldTypeNameHelp(prefix, file_identifier, suffix, type_name, ctx);
 }
 
 fn scalarFieldZigTypeName(field: *const FieldDescriptorProto) []const u8 {
@@ -171,9 +172,9 @@ fn writeFieldType(field: *const FieldDescriptorProto, proto_file: *const FileDes
         .TYPE_ENUM,
         .TYPE_MESSAGE,
         => if (is_list)
-            try writeFieldTypeName(field, proto_file, ctx, "*", "")
+            try writeFieldTypeName("*", field, "", proto_file, ctx)
         else
-            try writeFieldTypeName(field, proto_file, ctx, "", ""),
+            try writeFieldTypeName("", field, "", proto_file, ctx),
         else => _ = try ctx.writer.write(scalarFieldZigTypeName(field)),
     }
     if (is_list) _ = try ctx.writer.write(")");
@@ -229,7 +230,7 @@ pub fn genMessage(
             try ctx.writer.print(
                 \\pub const {s}_default: 
             , .{field.name.slice()});
-            try writeFieldTypeName(field, proto_file, ctx, "", "");
+            try writeFieldTypeName("", field, "", proto_file, ctx);
             switch (field.type) {
                 .TYPE_ENUM => //
                 try ctx.writer.print(" = .{s};", .{field.default_value.slice()}),
@@ -272,7 +273,7 @@ pub fn genMessage(
         switch (field.type) {
             .TYPE_MESSAGE,
             .TYPE_ENUM,
-            => try writeFieldTypeName(field, proto_file, ctx, "&", ".descriptor,\n"),
+            => try writeFieldTypeName("&", field, ".descriptor,\n", proto_file, ctx),
             else => _ = try ctx.writer.write("null,\n"),
         }
 
@@ -334,6 +335,7 @@ pub fn genMessageTest(
     message: *const DescriptorProto,
     ctx: anytype,
 ) !void {
+    // TODO roundtrip ser/de tests
     try ctx.writer.print(
         \\
         \\test {{ // dummy test for typechecking

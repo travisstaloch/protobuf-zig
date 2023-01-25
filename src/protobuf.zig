@@ -45,6 +45,7 @@ pub const Error = std.mem.Allocator.Error ||
 /// a version of std.leb.readULEB128 that breaks on overflow
 /// Read a single unsigned LEB128 value from the given reader as type T,
 /// or error.Overflow if the value cannot fit.
+// FIXME - this doesn't work
 pub fn readULEB128(comptime T: type, reader: anytype) !T {
     const U = if (@typeInfo(T).Int.bits < 8) u8 else T;
     const ShiftT = std.math.Log2Int(U);
@@ -351,11 +352,12 @@ pub const Protobuf = struct {
             typ != .TYPE_MESSAGE;
     }
 
-    fn assertIsMessageDescriptor(desc: *const MessageDescriptor) void {
-        assert(desc.magic == pbtypes.MESSAGE_DESCRIPTOR_MAGIC);
-    }
-
-    fn parsePackedRepeatedMember(scanned_member: ScannedMember, member: [*]u8, _: *Message, ctx: *Ctx) !void {
+    fn parsePackedRepeatedMember(
+        scanned_member: ScannedMember,
+        member: [*]u8,
+        _: *Message,
+        _: *Ctx,
+    ) !void {
         const field = scanned_member.field orelse unreachable;
         var fbs = std.io.fixedBufferStream(scanned_member.data);
         const reader = fbs.reader();
@@ -366,14 +368,19 @@ pub const Protobuf = struct {
                         error.EndOfStream => break,
                         else => return e,
                     };
-                    try listAppend(ctx.alloc, member, ListMut(i32), int);
+                    listAppend(member, ListMut(i32), int);
                 }
             },
             else => todo("{s}", .{@tagName(field.type)}),
         }
     }
 
-    fn parseOneofMember(scanned_member: ScannedMember, member: [*]u8, message: *Message, ctx: *Ctx) !void {
+    fn parseOneofMember(
+        scanned_member: ScannedMember,
+        member: [*]u8,
+        message: *Message,
+        ctx: *Ctx,
+    ) !void {
         _ = member;
         _ = message;
         _ = ctx;
@@ -390,15 +397,24 @@ pub const Protobuf = struct {
         }
     }
 
-    fn parseOptionalMember(scanned_member: ScannedMember, member: [*]u8, message: *Message, ctx: *Ctx) !void {
+    fn parseOptionalMember(
+        scanned_member: ScannedMember,
+        member: [*]u8,
+        message: *Message,
+        ctx: *Ctx,
+    ) !void {
         std.log.debug("parseOptionalMember({})", .{ptrfmt(member)});
 
-        parseRequiredMember(scanned_member, member, message, ctx, true) catch |err| switch (err) {
+        parseRequiredMember(scanned_member, member, message, ctx, true) catch |err|
+            switch (err) {
             error.FieldMissing => return,
             else => return err,
         };
         const field = scanned_member.field orelse unreachable;
-        std.log.debug("parseOptionalMember() setPresent({}) - {s}", .{ field.id, field.name });
+        std.log.debug(
+            "parseOptionalMember() setPresent({}) - {s}",
+            .{ field.id, field.name },
+        );
         message.setPresent(field.id);
     }
 
@@ -416,10 +432,17 @@ pub const Protobuf = struct {
         try parseRequiredMember(scanned_member, member, message, ctx, false);
     }
 
-    fn listAppend(_: Allocator, member: [*]u8, comptime L: type, item: L.Child) !void {
+    fn listAppend(
+        member: [*]u8,
+        comptime L: type,
+        item: L.Child,
+    ) void {
         const list = ptrAlignCast(*L, member);
         const short_name = afterLastIndexOf(@typeName(L.Child), '.');
-        std.log.debug("listAppend() {s} member {} list {}/{}/{}", .{ short_name, ptrfmt(member), ptrfmt(list.items), list.len, list.cap });
+        std.log.debug(
+            "listAppend() {s} member {} list {}/{}/{}",
+            .{ short_name, ptrfmt(member), ptrfmt(list.items), list.len, list.cap },
+        );
         list.appendAssumeCapacity(item);
     }
 
@@ -450,7 +473,7 @@ pub const Protobuf = struct {
                 const int = try scanned_member.readVarint128(i32, .int);
                 std.log.info("{s}: {}", .{ field.name.slice(), int });
                 if (field.label == .LABEL_REPEATED) {
-                    try listAppend(ctx.alloc, member, ListMut(i32), int);
+                    listAppend(member, ListMut(i32), int);
                 } else mem.writeIntLittle(i32, member[0..4], int);
             },
             .TYPE_BOOL => member[0] = scanned_member.data[0],
@@ -459,7 +482,7 @@ pub const Protobuf = struct {
 
                 const bytes = try ctx.alloc.dupe(u8, scanned_member.data);
                 if (field.label == .LABEL_REPEATED) {
-                    try listAppend(ctx.alloc, member, ListMut(String), String.init(bytes));
+                    listAppend(member, ListMut(String), String.init(bytes));
                 } else {
                     var s = ptrAlignCast(*String, member);
                     s.* = String.init(bytes);
@@ -483,11 +506,17 @@ pub const Protobuf = struct {
                 std.log.debug("sizeof_message {}", .{field_desc.sizeof_message});
 
                 if (field.label == .LABEL_REPEATED) {
-                    std.log.debug(".repeated {s} sizeof={}", .{ field_desc.name.slice(), field_desc.sizeof_message });
+                    std.log.debug(
+                        ".repeated {s} sizeof={}",
+                        .{ field_desc.name.slice(), field_desc.sizeof_message },
+                    );
                     const subm = try deserialize(field_desc, &limctx);
-                    try listAppend(ctx.alloc, member, ListMut(*Message), subm);
+                    listAppend(member, ListMut(*Message), subm);
                 } else {
-                    std.log.debug(".single {s} sizeof={}", .{ field_desc.name.slice(), field_desc.sizeof_message });
+                    std.log.debug(
+                        ".single {s} sizeof={}",
+                        .{ field_desc.name.slice(), field_desc.sizeof_message },
+                    );
                     const buf = member[0..field_desc.sizeof_message];
                     _ = try deserializeTo(buf, field_desc, &limctx);
                 }
@@ -507,14 +536,17 @@ pub const Protobuf = struct {
             return;
         };
 
-        std.log.debug("parseMember() '{s}' .{s} .{s} ", .{ field.name.slice(), @tagName(field.label), @tagName(field.type) });
+        std.log.debug(
+            "parseMember() '{s}' .{s} .{s} ",
+            .{ field.name.slice(), @tagName(field.label), @tagName(field.type) },
+        );
         var member = structMemberP(message, field.offset);
         return switch (field.label) {
             .LABEL_REQUIRED => parseRequiredMember(scanned_member, member, message, ctx, true),
             .LABEL_OPTIONAL, .LABEL_ERROR => if (flagsContain(field.flags, FieldFlag.FLAG_ONEOF))
                 parseOneofMember(scanned_member, member, message, ctx)
             else
-                return parseOptionalMember(scanned_member, member, message, ctx),
+                parseOptionalMember(scanned_member, member, message, ctx),
 
             .LABEL_REPEATED => if (scanned_member.key.wire_type == .LEN and
                 (flagsContain(field.flags, FieldFlag.FLAG_PACKED) or isPackableType(field.type)))
@@ -525,14 +557,22 @@ pub const Protobuf = struct {
     }
 
     pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
-        var buf = try ctx.alloc.alignedAlloc(u8, common.ptrAlign(*Message), desc.sizeof_message);
+        var buf = try ctx.alloc.alignedAlloc(
+            u8,
+            common.ptrAlign(*Message),
+            desc.sizeof_message,
+        );
         const m = ptrAlignCast(*Message, buf.ptr);
         errdefer m.deinit(ctx.alloc);
         m.descriptor = null; // make sure uninit
         return deserializeTo(buf, desc, ctx);
     }
 
-    fn deserializeTo(buf: []u8, desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
+    fn deserializeTo(
+        buf: []u8,
+        desc: *const MessageDescriptor,
+        ctx: *Ctx,
+    ) Error!*Message {
         const show_summary = false;
         var tmpbuf: if (show_summary) [mem.page_size]u8 else void = undefined;
 
@@ -541,7 +581,7 @@ pub const Protobuf = struct {
         // TODO make this dynamic
         var required_fields_bitmap = std.StaticBitSet(128).initEmpty();
         var n_unknown: u32 = 0;
-        assertIsMessageDescriptor(desc);
+        assert(desc.magic == pbtypes.MESSAGE_DESCRIPTOR_MAGIC);
         var message = ptrAlignCast(*Message, buf.ptr);
         std.log.info("\n+++ deserialize {s} {}-{}/{} isInit={} size=0x{x}/{} data len {} +++", .{
             desc.name.slice(),
@@ -554,9 +594,12 @@ pub const Protobuf = struct {
             ctx.data.len,
         });
         if (!message.isInit()) {
-            if (desc.message_init) |initfn| {
-                initfn(buf.ptr, buf.len);
-                std.log.debug("(init) called {s}.initBytes({}, {})", .{ message.descriptor.?.name.slice(), ptrfmt(buf.ptr), buf.len });
+            if (desc.message_init) |init| {
+                init(buf.ptr, buf.len);
+                std.log.debug(
+                    "(init) called {s}.initBytes({}, {})",
+                    .{ message.descriptor.?.name.slice(), ptrfmt(buf.ptr), buf.len },
+                );
             } else {
                 message.* = genericMessageInit(desc);
             }
@@ -579,7 +622,10 @@ pub const Protobuf = struct {
             var mfield: ?*const FieldDescriptor = null;
             if (last_field == null or last_field.?.id != key.field_id) {
                 if (intRangeLookup(desc.field_ids, key.field_id)) |field_index| {
-                    std.log.debug("(scan) found field_id={} at index={}", .{ key.field_id, field_index });
+                    std.log.debug(
+                        "(scan) found field_id={} at index={}",
+                        .{ key.field_id, field_index },
+                    );
                     mfield = &desc.fields.items[field_index];
                     last_field = mfield;
                     last_field_index = @intCast(u7, field_index);
@@ -592,7 +638,9 @@ pub const Protobuf = struct {
 
             if (mfield) |field| {
                 if (field.label == .LABEL_REQUIRED)
-                    // TODO create and use message.requiredFieldIndex(field_index)
+                    // TODO make a message.requiredFieldIndex(field_index) method
+                    // which ignores optional fields, allowing
+                    // required_fields_bitmap to be smaller
                     required_fields_bitmap.set(last_field_index);
             }
 
@@ -606,14 +654,20 @@ pub const Protobuf = struct {
                 },
                 .I64 => {
                     if (ctx.data.len < 8) {
-                        std.log.err("too short after 64 bit wiretype at offset {}", .{ctx.bytesRead()});
+                        std.log.err(
+                            "too short after 64 bit wiretype at offset {}",
+                            .{ctx.bytesRead()},
+                        );
                         return error.InvalidData;
                     }
                     sm.data.len = 8;
                 },
                 .I32 => {
                     if (ctx.data.len < 4) {
-                        std.log.err("too short after 32 bit wiretype at offset {}", .{ctx.bytesRead()});
+                        std.log.err(
+                            "too short after 32 bit wiretype at offset {}",
+                            .{ctx.bytesRead()},
+                        );
                         return error.InvalidData;
                     }
                     sm.data.len = 4;
@@ -626,18 +680,28 @@ pub const Protobuf = struct {
                     ctx.skip(sm.data.len);
                 },
                 else => {
-                    std.log.err("unsupported tag .{s} at offset {}", .{ @tagName(key.wire_type), ctx.bytesRead() });
+                    std.log.err("unsupported tag .{s} at offset {}", .{
+                        @tagName(key.wire_type),
+                        ctx.bytesRead(),
+                    });
                     return error.InvalidType;
                 },
             }
 
             if (mfield) |field| {
-                std.log.debug("(scan) field {s}.{s} (+0x{x}/{}={})", .{ desc.name.slice(), field.name.slice(), field.offset, field.offset, ptrfmt(buf.ptr + field.offset) });
+                std.log.debug("(scan) field {s}.{s} (+0x{x}/{}={})", .{
+                    desc.name.slice(),
+                    field.name.slice(),
+                    field.offset,
+                    field.offset,
+                    ptrfmt(buf.ptr + field.offset),
+                });
                 if (field.label == .LABEL_REPEATED) {
                     // list ele type doesn't matter, just want to change len
                     const list = structMemberPtr(ListMut(u8), message, field.offset);
                     if (key.wire_type == .LEN and
-                        (flagsContain(field.flags, FieldFlag.FLAG_PACKED) or isPackableType(field.type)))
+                        (flagsContain(field.flags, FieldFlag.FLAG_PACKED) or
+                        isPackableType(field.type)))
                     {
                         list.len += try sm.countPackedElements(field.type);
                     } else list.len += 1;
@@ -664,7 +728,9 @@ pub const Protobuf = struct {
                     list.len = 0;
                 }
             } else if (field.label == .LABEL_REQUIRED) {
-                if (field.default_value == null and !required_fields_bitmap.isSet(i)) {
+                if (field.default_value == null and
+                    !required_fields_bitmap.isSet(i))
+                {
                     std.log.warn(
                         "message {s}: missing required field {s}",
                         .{ desc.name, field.name },
@@ -698,7 +764,10 @@ pub const Protobuf = struct {
                     const new = buf[start..i];
                     const descfields = desc.fields.slice();
                     const fieldname = for (descfields) |f, j| {
-                        if (f.offset > start) break if (j == 0) "base" else descfields[j -| 1].name.slice();
+                        if (f.offset > start) break if (j == 0)
+                            "base"
+                        else
+                            descfields[j -| 1].name.slice();
                     } else descfields[descfields.len - 1].name.slice();
                     std.log.info("{s} - difference at {s}:0x{x}/{}\nold {any}\nnew{any}", .{
                         desc.name,
