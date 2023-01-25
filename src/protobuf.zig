@@ -42,52 +42,29 @@ pub const Error = std.mem.Allocator.Error ||
     std.fs.File.WriteFileError ||
     LocalError;
 
-/// a version of std.leb.readULEB128 that breaks on overflow
-/// Read a single unsigned LEB128 value from the given reader as type T,
-/// or error.Overflow if the value cannot fit.
-// FIXME - this doesn't work
-pub fn readULEB128(comptime T: type, reader: anytype) !T {
-    const U = if (@typeInfo(T).Int.bits < 8) u8 else T;
-    const ShiftT = std.math.Log2Int(U);
-
-    const max_group = (@typeInfo(U).Int.bits + 6) / 7;
-
-    var value = @as(U, 0);
-    var group = @as(ShiftT, 0);
-
-    while (group < max_group) : (group += 1) {
-        const byte = try reader.readByte();
-
-        const ov = @shlWithOverflow(@as(U, byte & 0x7f), group * 7);
-        if (ov[1] != 0) break;
-
-        value |= ov[0];
-        if (byte & 0x80 == 0) break;
-    } else {
-        return error.Overflow;
+// Reads a varint from the reader and returns the value.
+// `mode = .sint` should used for sint32 and sint64 decoding when expecting
+// lots of negative numbers as it uses zig zag encoding to reduce the size of
+// negative values. negatives encoded otherwise (with `mode = .int`). will
+// require extra size (10 bytes each) and are inefficient.
+pub fn readVarint128(comptime T: type, reader: anytype, comptime mode: IntMode) !T {
+    var shift: u6 = 0;
+    var value: u64 = 0;
+    while (true) {
+        const b = try reader.readByte();
+        value |= @as(u64, @truncate(u7, b)) << shift;
+        if (b >> 7 == 0) break;
+        shift += 7;
     }
-
-    // only applies in the case that we extended to u8
-    if (U != T) {
-        if (value > std.math.maxInt(T)) return error.Overflow;
-    }
-
-    return @truncate(T, value);
-}
-
-// Reads a varint from the reader and returns the value, eos (end of steam) pair.
-// `mode = .sint` should used for sint32 and sint64 decoding when expecting lots of negative numbers as it
-// uses zig zag encoding to reduce the size of negative values. negatives encoded otherwise (with `mode = .int`)
-// will require extra size (10 bytes each) and are inefficient.
-pub fn readVarint128(comptime T: type, reader: anytype, mode: IntMode) !T {
-    var value = try readULEB128(T, reader);
-
     if (mode == .sint) {
         const S = std.meta.Int(.signed, @bitSizeOf(T));
         const svalue = @bitCast(S, value);
         value = @bitCast(T, (svalue >> 1) ^ (-(svalue & 1)));
     }
-    return value;
+    return switch (@typeInfo(T).Int.signedness) {
+        .signed => @truncate(T, @bitCast(i64, value)),
+        .unsigned => @truncate(T, value),
+    };
 }
 
 pub fn writeVarint128(comptime T: type, _value: T, writer: anytype, comptime mode: IntMode) !void {
@@ -172,7 +149,7 @@ pub const Protobuf = struct {
         // `mode = .sint` should used for sint32 and sint64 decoding when expecting lots of negative numbers as it
         // uses zig zag encoding to reduce the size of negative values. negatives encoded otherwise (with `mode = .int`)
         // will require extra size (10 bytes each) and are inefficient.
-        pub fn readVarint128(ctx: *Ctx, comptime T: type, mode: IntMode) !T {
+        pub fn readVarint128(ctx: *Ctx, comptime T: type, comptime mode: IntMode) !T {
             var ctxfbs = ctx.fbs();
             const reader = ctxfbs.reader();
             const value = try top_level.readVarint128(T, reader, mode);
@@ -295,7 +272,7 @@ pub const Protobuf = struct {
         data: []const u8,
         prefix_len: usize = 0,
 
-        pub fn readVarint128(sm: ScannedMember, comptime T: type, mode: IntMode) !T {
+        pub fn readVarint128(sm: ScannedMember, comptime T: type, comptime mode: IntMode) !T {
             var stream = std.io.fixedBufferStream(sm.data);
             return top_level.readVarint128(T, stream.reader(), mode);
         }
