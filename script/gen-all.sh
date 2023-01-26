@@ -7,23 +7,24 @@ DEST_DIR=gen
 # recursively remove all *.pb.zig files from $DEST_DIR
 find $DEST_DIR -name "*.pb.zig" -exec rm {} \;
 
-for dir in $@; do
-  PROTOFILES=$(find $dir -name "*.proto")
-  for file in $PROTOFILES; do
-    dir=${dir%/*}
-    CMD="zig-out/bin/protoc-zig --zig_out=$DEST_DIR -I $dir $file"
-    echo $CMD
-    $($CMD)
-  done
-done
+# iterate args, skipping '-I examples'
+state="start"
+inc=""
+for arg in $@; do
+  if [[ $arg == "-I" ]]; then
+    state="-I"
+  elif [[ $state == "-I" ]]; then
+    state=""
+    inc=$arg
+  else
+    PROTOFILES=$(find $arg -name "*.proto")
 
-for dir in $@; do
-  PROTOFILES=$(find $dir -name "*.proto")
-  for file in $PROTOFILES; do
-    BASE=$(basename $file) # get rid of the directory
-    FILE="$DEST_DIR/${BASE%.*}.pb.zig" # replace the extension
-    CMD="zig test $FILE --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end"
-    echo $CMD
-    $($CMD)
-  done
+    for file in $PROTOFILES; do
+      script/gen.sh -I $inc $file      
+    done
+
+    for file in $PROTOFILES; do
+      script/gen-test.sh -I $inc $file
+    done
+  fi
 done
