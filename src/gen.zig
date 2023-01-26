@@ -85,6 +85,11 @@ fn writeFieldTypeNameHelp(
     );
 }
 
+fn typenamesMatch(absolute_typename: []const u8, typename: []const u8) bool {
+    // std.debug.print("absolute_typename {s} typename {s}\n", .{ absolute_typename, typename });
+    return absolute_typename[0] == '.' and mem.eql(u8, absolute_typename[1..], typename);
+}
+
 fn writeFieldTypeName(
     comptime prefix: []const u8,
     field: *const FieldDescriptorProto,
@@ -92,26 +97,27 @@ fn writeFieldTypeName(
     proto_file: *const FileDescriptorProto,
     ctx: anytype,
 ) !void {
-    const package = proto_file.package.slice();
     const field_typename = field.type_name.slice();
     if (field_typename.len == 0) return error.MissingTypename;
-    // TODO: exact match. replace endsWith() with eql()/check leading '.'
+
     const file_identifier = outer: for (ctx.base.req.proto_file.slice()) |pf| {
         if (pf == proto_file) continue;
         for (pf.message_type.slice()) |it| {
-            if (mem.endsWith(u8, field_typename, it.name.slice())) {
+            if (typenamesMatch(field_typename, it.name.slice())) {
                 const names = try filePackageNames(pf.name, &ctx.base.buf);
                 break :outer names[0];
             }
         }
         for (pf.enum_type.slice()) |it| {
-            if (mem.endsWith(u8, field_typename, it.name.slice())) {
+            if (typenamesMatch(field_typename, it.name.slice())) {
                 const names = try filePackageNames(pf.name, &ctx.base.buf);
                 break :outer names[0];
             }
         }
     } else "";
+
     if (proto_file.isPresentField(.package)) {
+        const package = proto_file.package.slice();
         if (mem.startsWith(u8, field_typename[1..], package)) {
             const type_name = field_typename[2 + proto_file.package.len ..];
             try writeFieldTypeNameHelp(prefix, file_identifier, suffix, type_name, ctx);
@@ -195,7 +201,11 @@ pub fn genMessage(
     // gen fields
     for (message.field.slice()) |field| {
         if (field.isPresentField(.oneof_index)) continue;
-        try ctx.writer.print("{s}: ", .{field.name.slice()});
+        const field_name = field.name.slice();
+        if (std.zig.Token.keywords.get(field_name) != null)
+            try ctx.writer.print("@\"{s}\": ", .{field_name})
+        else
+            try ctx.writer.print("{s}: ", .{field_name});
         try writeFieldType(field, proto_file, ctx);
         _ = try ctx.writer.write(" = ");
         if (field.label == .LABEL_REPEATED) {
