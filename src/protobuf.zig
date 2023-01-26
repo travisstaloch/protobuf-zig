@@ -141,10 +141,6 @@ pub const Protobuf = struct {
             return Protobuf.deserialize(mdesc, ctx);
         }
 
-        pub fn deserializeTo(ctx: *Ctx, desc: *const MessageDescriptor, buf: []u8) Error!*Message {
-            return Protobuf.deserializeTo(buf, desc, ctx);
-        }
-
         // Reads a varint from the reader and returns the value, eos (end of steam) pair.
         // `mode = .sint` should used for sint32 and sint64 decoding when expecting lots of negative numbers as it
         // uses zig zag encoding to reduce the size of negative values. negatives encoded otherwise (with `mode = .int`)
@@ -221,7 +217,10 @@ pub const Protobuf = struct {
         message.descriptor = desc;
 
         for (desc.fields.slice()) |field| {
-            std.log.debug("genericMessageInit field name {s} default {} label {s}", .{ field.name.slice(), ptrfmt(field.default_value), @tagName(field.label) });
+            std.log.debug(
+                "genericMessageInit field name {s} default {} label {s}",
+                .{ field.name, ptrfmt(field.default_value), @tagName(field.label) },
+            );
             if (field.default_value != null and field.label != .LABEL_REPEATED) {
                 var field_bytes = structMemberP(&message, field.offset);
                 const default = @ptrCast([*]const u8, field.default_value);
@@ -404,7 +403,7 @@ pub const Protobuf = struct {
         var field = scanned_member.field orelse unreachable;
         std.log.debug(
             "parseRepeatedMember() field name='{s}' offset=0x{x}/{}",
-            .{ field.name.slice(), field.offset, field.offset },
+            .{ field.name, field.offset, field.offset },
         );
         try parseRequiredMember(scanned_member, member, message, ctx, false);
     }
@@ -438,7 +437,7 @@ pub const Protobuf = struct {
         std.log.debug(
             "parseRequiredMember() field={s} .{s} .{s} {}",
             .{
-                field.name.slice(),
+                field.name,
                 @tagName(field.type),
                 @tagName(scanned_member.key.wire_type),
                 ptrfmt(member),
@@ -448,7 +447,7 @@ pub const Protobuf = struct {
         switch (field.type) {
             .TYPE_INT32, .TYPE_ENUM => {
                 const int = try scanned_member.readVarint128(i32, .int);
-                std.log.info("{s}: {}", .{ field.name.slice(), int });
+                std.log.info("{s}: {}", .{ field.name, int });
                 if (field.label == .LABEL_REPEATED) {
                     listAppend(member, ListMut(i32), int);
                 } else mem.writeIntLittle(i32, member[0..4], int);
@@ -464,14 +463,14 @@ pub const Protobuf = struct {
                     var s = ptrAlignCast(*String, member);
                     s.* = String.init(bytes);
                 }
-                std.log.info("{s}: '{s}'", .{ field.name.slice(), bytes });
+                std.log.info("{s}: '{s}'", .{ field.name, bytes });
             },
             .TYPE_MESSAGE => {
                 if (wire_type != .LEN) return error.FieldMissing;
 
                 std.log.debug(
                     "parsing message field '{s}' len {} member {}",
-                    .{ field.name.slice(), scanned_member.data.len, ptrfmt(member) },
+                    .{ field.name, scanned_member.data.len, ptrfmt(member) },
                 );
                 if (field.descriptor == null) {
                     std.log.err("field.descriptor == null field {}", .{field.*});
@@ -485,17 +484,17 @@ pub const Protobuf = struct {
                 if (field.label == .LABEL_REPEATED) {
                     std.log.debug(
                         ".repeated {s} sizeof={}",
-                        .{ field_desc.name.slice(), field_desc.sizeof_message },
+                        .{ field_desc.name, field_desc.sizeof_message },
                     );
                     const subm = try deserialize(field_desc, &limctx);
                     listAppend(member, ListMut(*Message), subm);
                 } else {
                     std.log.debug(
                         ".single {s} sizeof={}",
-                        .{ field_desc.name.slice(), field_desc.sizeof_message },
+                        .{ field_desc.name, field_desc.sizeof_message },
                     );
-                    const buf = member[0..field_desc.sizeof_message];
-                    _ = try deserializeTo(buf, field_desc, &limctx);
+                    const subm = ptrAlignCast(**Message, member);
+                    subm.* = try deserialize(field_desc, &limctx);
                 }
             },
             else => todo("{s} ", .{@tagName(field.type)}),
@@ -515,7 +514,7 @@ pub const Protobuf = struct {
 
         std.log.debug(
             "parseMember() '{s}' .{s} .{s} ",
-            .{ field.name.slice(), @tagName(field.label), @tagName(field.type) },
+            .{ field.name, @tagName(field.label), @tagName(field.type) },
         );
         var member = structMemberP(message, field.offset);
         return switch (field.label) {
@@ -539,17 +538,10 @@ pub const Protobuf = struct {
             common.ptrAlign(*Message),
             desc.sizeof_message,
         );
-        const m = ptrAlignCast(*Message, buf.ptr);
-        errdefer m.deinit(ctx.alloc);
-        m.descriptor = null; // make sure uninit
-        return deserializeTo(buf, desc, ctx);
-    }
+        var message = ptrAlignCast(*Message, buf.ptr);
+        errdefer message.deinit(ctx.alloc);
+        message.descriptor = null; // make sure uninit
 
-    fn deserializeTo(
-        buf: []u8,
-        desc: *const MessageDescriptor,
-        ctx: *Ctx,
-    ) Error!*Message {
         const show_summary = false;
         var tmpbuf: if (show_summary) [mem.page_size]u8 else void = undefined;
 
@@ -559,9 +551,9 @@ pub const Protobuf = struct {
         var required_fields_bitmap = std.StaticBitSet(128).initEmpty();
         var n_unknown: u32 = 0;
         assert(desc.magic == pbtypes.MESSAGE_DESCRIPTOR_MAGIC);
-        var message = ptrAlignCast(*Message, buf.ptr);
+
         std.log.info("\n+++ deserialize {s} {}-{}/{} isInit={} size=0x{x}/{} data len {} +++", .{
-            desc.name.slice(),
+            desc.name,
             ptrfmt(buf.ptr),
             ptrfmt(buf.ptr + buf.len),
             buf.len,
@@ -575,7 +567,7 @@ pub const Protobuf = struct {
                 init(buf.ptr, buf.len);
                 std.log.debug(
                     "(init) called {s}.initBytes({}, {})",
-                    .{ message.descriptor.?.name.slice(), ptrfmt(buf.ptr), buf.len },
+                    .{ message.descriptor.?.name, ptrfmt(buf.ptr), buf.len },
                 );
             } else {
                 message.* = genericMessageInit(desc);
@@ -667,8 +659,8 @@ pub const Protobuf = struct {
 
             if (mfield) |field| {
                 std.log.debug("(scan) field {s}.{s} (+0x{x}/{}={})", .{
-                    desc.name.slice(),
-                    field.name.slice(),
+                    desc.name,
+                    field.name,
                     field.offset,
                     field.offset,
                     ptrfmt(buf.ptr + field.offset),
@@ -683,7 +675,7 @@ pub const Protobuf = struct {
                         list.len += try sm.countPackedElements(field.type);
                     } else list.len += 1;
                 }
-            } else std.log.debug("(scan) field {s} unknown", .{desc.name.slice()});
+            } else std.log.debug("(scan) field {s} unknown", .{desc.name});
             try scanned_members.append(sfalloc, sm);
         }
 
@@ -696,7 +688,7 @@ pub const Protobuf = struct {
                 if (list.len != 0) {
                     std.log.debug(
                         "(scan) field '{s}' - allocating {}={}*{} list bytes",
-                        .{ field.name.slice(), size * list.len, size, list.len },
+                        .{ field.name, size * list.len, size, list.len },
                     );
                     // TODO CLEAR_REMAINING_N_PTRS
                     var bytes = try ctx.alloc.alloc(u8, size * list.len);
@@ -759,7 +751,7 @@ pub const Protobuf = struct {
             }
         }
         std.log.info("\n--- deserialize {s} {}-{} isInit={} size=0x{x}/{} ---", .{
-            desc.name.slice(),
+            desc.name,
             ptrfmt(buf.ptr),
             ptrfmt(buf.ptr + buf.len),
             message.isInit(),

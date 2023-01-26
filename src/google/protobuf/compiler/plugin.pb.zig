@@ -30,7 +30,7 @@ pub const UninterpretedOption = extern struct {
     positive_int_value: u64 = 0,
     negative_int_value: i64 = 0,
     double_value: f64 = 0,
-    string_value: BinaryData = .{},
+    string_value: *BinaryData = undefined,
     aggregate_value: String = String.initEmpty(),
 
     pub usingnamespace MessageMixins(@This());
@@ -277,7 +277,7 @@ pub const FieldDescriptorProto = extern struct {
     default_value: String = String.initEmpty(),
     oneof_index: i32 = 0,
     json_name: String = String.initEmpty(),
-    options: FieldOptions = FieldOptions.init(),
+    options: *FieldOptions = undefined,
     proto3_optional: bool = false,
 
     pub usingnamespace MessageMixins(@This());
@@ -477,7 +477,7 @@ pub const EnumValueDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
     number: i32 = 0,
-    options: EnumValueOptions = EnumValueOptions.init(),
+    options: *EnumValueOptions = undefined,
 
     pub usingnamespace MessageMixins(@This());
 
@@ -562,7 +562,7 @@ pub const EnumDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
     value: ListMut(*EnumValueDescriptorProto) = .{},
-    options: EnumOptions = EnumOptions.init(),
+    options: *EnumOptions = undefined,
     reserved_range: ListMut(*EnumReservedRange) = .{},
     reserved_name: ListMutScalar(String) = .{},
 
@@ -695,7 +695,7 @@ pub const OneofOptions = extern struct {
 pub const OneofDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
-    options: OneofOptions = OneofOptions.init(),
+    options: *OneofOptions = undefined,
 
     pub usingnamespace MessageMixins(@This());
 
@@ -799,7 +799,7 @@ pub const DescriptorProto = extern struct {
     enum_type: ListMut(*EnumDescriptorProto) = .{},
     extension_range: ListMut(*ExtensionRange) = .{},
     oneof_decl: ListMut(*OneofDescriptorProto) = .{},
-    options: MessageOptions = MessageOptions.init(),
+    options: *MessageOptions = undefined,
     reserved_range: ListMut(*ReservedRange) = .{},
     reserved_name: ListMutScalar(String) = .{},
 
@@ -809,7 +809,7 @@ pub const DescriptorProto = extern struct {
         base: Message,
         start: i32 = 0,
         end: i32 = 0,
-        options: ExtensionRangeOptions = ExtensionRangeOptions.init(),
+        options: *ExtensionRangeOptions = undefined,
 
         pub usingnamespace MessageMixins(@This());
 
@@ -1040,7 +1040,7 @@ pub const MethodDescriptorProto = extern struct {
     name: String = String.initEmpty(),
     input_type: String = String.initEmpty(),
     output_type: String = String.initEmpty(),
-    options: MethodOptions = MethodOptions.init(),
+    options: *MethodOptions = undefined,
     client_streaming: bool = false,
     server_streaming: bool = false,
 
@@ -1148,7 +1148,7 @@ pub const ServiceDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
     method: ListMut(*MethodDescriptorProto) = .{},
-    options: ServiceOptions = ServiceOptions.init(),
+    options: *ServiceOptions = undefined,
 
     pub usingnamespace MessageMixins(@This());
 
@@ -1537,14 +1537,14 @@ pub const FileDescriptorProto = extern struct {
     enum_type: ListMut(*EnumDescriptorProto) = .{},
     service: ListMut(*ServiceDescriptorProto) = .{},
     extension: ListMut(*FieldDescriptorProto) = .{},
-    options: FileOptions = FileOptions.init(),
-    source_code_info: SourceCodeInfo = SourceCodeInfo.init(),
+    options: *FileOptions = undefined,
+    source_code_info: *SourceCodeInfo = undefined,
     syntax: String = String.initEmpty(),
     edition: String = String.initEmpty(),
 
     comptime {
         // @compileLog(@sizeOf(FileDescriptorProto));
-        assert(@sizeOf(FileDescriptorProto) == 576);
+        assert(@sizeOf(FileDescriptorProto) == 288);
         // @compileLog(@offsetOf(FileDescriptorProto, "enum_type"));
         assert(@offsetOf(FileDescriptorProto, "enum_type") == 0xa8); //  == 168
     }
@@ -1776,11 +1776,11 @@ pub const CodeGeneratorRequest = extern struct {
     file_to_generate: ListMutScalar(String) = .{},
     parameter: String = String.initEmpty(),
     proto_file: ListMut(*FileDescriptorProto) = .{},
-    compiler_version: Version = Version.init(),
+    compiler_version: *Version = undefined,
 
     comptime {
         // @compileLog(@sizeOf(CodeGeneratorRequest));
-        assert(@sizeOf(CodeGeneratorRequest) == 176);
+        assert(@sizeOf(CodeGeneratorRequest) == 112);
         // @compileLog(@offsetOf(CodeGeneratorRequest, "proto_file"));
         assert(@offsetOf(CodeGeneratorRequest, "proto_file") == 0x50); //  == 80
     }

@@ -113,7 +113,8 @@ fn fieldIndicesByName(comptime field_descriptors: []const FieldDescriptor) []con
             return std.mem.lessThan(u8, a[1], b[1]);
         }
     }.lessThan;
-    for (field_descriptors) |fd, i| tups[i] = .{ @intCast(c_uint, i), fd.name.slice() };
+    for (field_descriptors) |fd, i|
+        tups[i] = .{ @intCast(c_uint, i), fd.name.slice() };
     std.sort.sort(Tup, &tups, {}, lessThan);
     var result: [field_descriptors.len]c_uint = undefined;
     for (tups) |tup, i| result[i] = tup[0];
@@ -292,23 +293,23 @@ pub const MessageDescriptor = extern struct {
     reserved3: ?*anyopaque = null,
 
     pub fn init(comptime T: type) MessageDescriptor {
-        const typename = @typeName(T);
-        const names = common.splitOn([]const u8, typename, '.');
-        const name = names[1];
-
-        var result: MessageDescriptor = .{
-            .magic = MESSAGE_DESCRIPTOR_MAGIC,
-            .name = String.init(name),
-            .zig_name = String.init(typename),
-            .package_name = String.init(names[0]),
-            .sizeof_message = @sizeOf(T),
-            .fields = List(FieldDescriptor).init(&T.field_descriptors),
-            .field_ids = List(c_uint).init(T.field_ids),
-            .opt_field_ids = List(c_uint).init(T.opt_field_ids),
-            .message_init = InitBytes(T),
-        };
-        // TODO - audit and remove unnecessary checks
         comptime {
+            const typename = @typeName(T);
+            const names = common.splitOn([]const u8, typename, '.');
+            const name = names[1];
+
+            var result: MessageDescriptor = .{
+                .magic = MESSAGE_DESCRIPTOR_MAGIC,
+                .name = String.init(name),
+                .zig_name = String.init(typename),
+                .package_name = String.init(names[0]),
+                .sizeof_message = @sizeOf(T),
+                .fields = List(FieldDescriptor).init(&T.field_descriptors),
+                .field_ids = List(c_uint).init(T.field_ids),
+                .opt_field_ids = List(c_uint).init(T.opt_field_ids),
+                .message_init = InitBytes(T),
+            };
+            // TODO - audit and remove unnecessary checks
             {
                 var fields = result.fields.items[0..result.fields.len].*;
                 for (fields) |field, i| {
@@ -367,13 +368,16 @@ pub const MessageDescriptor = extern struct {
                     "{s} size mismatch expected {} but fields total calculated size is {}",
                     .{ name, sizeof_message, fields_total_size },
                 );
-        }
 
-        return result;
+            return result;
+        }
     }
 
     /// returns the index of `field_id` within `desc.opt_field_ids`
-    pub fn optionalFieldIndex(desc: *const MessageDescriptor, field_id: c_uint) ?usize {
+    pub fn optionalFieldIndex(
+        desc: *const MessageDescriptor,
+        field_id: c_uint,
+    ) ?usize {
         return if (mem.indexOfScalar(c_uint, desc.opt_field_ids.slice(), field_id)) |idx|
             idx
         else
@@ -436,7 +440,7 @@ pub const Message = extern struct {
     /// ptr cast to T. verifies that m.descriptor.name ends with @typeName(T)
     pub fn as(m: *Message, comptime T: type) !*T {
         if (!mem.endsWith(u8, @typeName(T), m.descriptor.?.name.slice())) {
-            std.log.err("expected '{s}' to contain '{s}'", .{ @typeName(T), m.descriptor.?.name.slice() });
+            std.log.err("expected '{s}' to contain '{s}'", .{ @typeName(T), m.descriptor.?.name });
             return error.TypeMismatch;
         }
         return @ptrCast(*T, m);
@@ -444,7 +448,7 @@ pub const Message = extern struct {
 
     pub fn formatMessage(message: *const Message, writer: anytype) WriteErr!void {
         const desc = message.descriptor orelse unreachable;
-        try writer.print("{s}{{", .{desc.name.slice()});
+        try writer.print("{s}{{", .{desc.name});
         const fields = desc.fields;
         const bytes = @ptrCast([*]const u8, message);
         for (fields.slice()) |f, i| {
@@ -476,10 +480,10 @@ pub const Message = extern struct {
                             try writer.print(".{s} = &.{{", .{field_name});
                             for (list.slice()) |it, j| {
                                 if (j != 0) _ = try writer.write(", ");
-                                try writer.print("{}", .{it});
+                                try writer.print("\"{}\"", .{it});
                             }
                             _ = try writer.write("}");
-                        } else try writer.print(".{s} = {}", .{ field_name, ptrAlignCast(*const String, member).* });
+                        } else try writer.print(".{s} = \"{}\"", .{ field_name, ptrAlignCast(*const String, member).* });
                     },
                     .TYPE_BOOL => {
                         if (f.label == .LABEL_REPEATED) todo("format repeated bool", .{});
@@ -512,7 +516,9 @@ pub const Message = extern struct {
     }
 
     fn isPointerField(f: FieldDescriptor) bool {
-        return f.label == .LABEL_REPEATED or f.type == .TYPE_STRING;
+        return f.label == .LABEL_REPEATED or
+            f.type == .TYPE_STRING or
+            f.type == .TYPE_MESSAGE;
     }
 
     fn deinitImpl(
@@ -526,7 +532,7 @@ pub const Message = extern struct {
 
         std.log.debug(
             "\ndeinit message {s}{}-{} size={}",
-            .{ desc.name.slice(), ptrfmt(m), ptrfmt(bytes + desc.sizeof_message), desc.sizeof_message },
+            .{ desc.name, ptrfmt(m), ptrfmt(bytes + desc.sizeof_message), desc.sizeof_message },
         );
         for (desc.fields.slice()) |field| {
             if (mode == .only_pointer_fields and !isPointerField(field))
@@ -541,7 +547,10 @@ pub const Message = extern struct {
                     const L = ListMutScalar(String);
                     var list = ptrAlignCast(*L, bytes + field.offset);
                     if (list.len != 0) {
-                        std.log.debug("deinit {s}.{s} repeated string field len {}", .{ desc.name.slice(), field.name.slice(), list.len });
+                        std.log.debug(
+                            "deinit {s}.{s} repeated string field len {}",
+                            .{ desc.name, field.name, list.len },
+                        );
                         for (list.slice()) |s|
                             s.deinit(allocator);
                         list.deinit(allocator);
@@ -552,7 +561,7 @@ pub const Message = extern struct {
                     if (list.len != 0) {
                         std.log.debug(
                             "deinit {s}.{s} repeated message field len/cap {}/{}",
-                            .{ desc.name.slice(), field.name.slice(), list.len, list.cap },
+                            .{ desc.name, field.name, list.len, list.cap },
                         );
                         for (list.slice()) |subm|
                             deinitImpl(subm, allocator, .all_fields);
@@ -565,23 +574,42 @@ pub const Message = extern struct {
                     if (list.len != 0) {
                         std.log.debug(
                             "deinit {s}.{s} repeated field {s} len {} size {} bytelen {}",
-                            .{ desc.name.slice(), field.name.slice(), @tagName(field.type), list.len, size, size * list.len },
+                            .{
+                                desc.name,
+                                field.name,
+                                @tagName(field.type),
+                                list.len,
+                                size,
+                                size * list.len,
+                            },
                         );
                         allocator.free(list.items[0 .. size * list.cap]);
                     }
                 }
             } else if (field.type == .TYPE_MESSAGE) {
                 if (m.isPresent(field.id)) {
-                    std.log.debug("deinit {s}.{s} single message field", .{ desc.name, field.name });
-                    var subm = ptrAlignCast(*Message, bytes + field.offset);
-                    deinitImpl(subm, allocator, .only_pointer_fields);
+                    std.log.debug(
+                        "deinit {s}.{s} single message field",
+                        .{ desc.name, field.name },
+                    );
+                    var subm = ptrAlignCast(**Message, bytes + field.offset);
+                    deinitImpl(subm.*, allocator, .only_pointer_fields);
+                    const subbytes = @ptrCast([*]u8, subm.*);
+                    const subdesc = subm.*.descriptor orelse
+                        panicf("can't deinit a message with no descriptor.", .{});
+                    allocator.free(subbytes[0..subdesc.sizeof_message]);
                 }
             } else if (field.type == .TYPE_STRING) {
                 var s = ptrAlignCast(*String, bytes + field.offset);
                 if (s.len != 0 and s.items != String.empty.items) {
                     std.log.debug(
                         "deinit {s}.{s} single string field {} offset {}",
-                        .{ desc.name.slice(), field.name.slice(), ptrfmt(bytes + field.offset), field.offset },
+                        .{
+                            desc.name,
+                            field.name,
+                            ptrfmt(bytes + field.offset),
+                            field.offset,
+                        },
                     );
                     s.deinit(allocator);
                 }

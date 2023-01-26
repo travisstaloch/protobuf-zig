@@ -30,17 +30,17 @@ fn parseWithSystemProtoc(protofile: []const u8) ![]const u8 {
     return r.stderr;
 }
 
-inline fn deserializeHelper(comptime T: type, protofile: []const u8, alloc: mem.Allocator) !*T {
+fn deserializeHelper(comptime T: type, protofile: []const u8, alloc: mem.Allocator) !*T {
     const bytes = try parseWithSystemProtoc(protofile);
     defer alloc.free(bytes);
     return deserializeBytesHelper(T, bytes, alloc);
 }
-inline fn deserializeBytesHelper(comptime T: type, bytes: []const u8, alloc: mem.Allocator) !*T {
+fn deserializeBytesHelper(comptime T: type, bytes: []const u8, alloc: mem.Allocator) !*T {
     var ctx = protobuf.context(bytes, alloc);
     const message = try ctx.deserialize(&T.descriptor);
     return try message.as(T);
 }
-inline fn deserializeHexBytesHelper(comptime T: type, hexbytes: []const u8, alloc: mem.Allocator) !*T {
+fn deserializeHexBytesHelper(comptime T: type, hexbytes: []const u8, alloc: mem.Allocator) !*T {
     var out = try alloc.alloc(u8, hexbytes.len / 2);
     defer alloc.free(out);
     const bytes = try std.fmt.hexToBytes(out, hexbytes);

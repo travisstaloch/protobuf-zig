@@ -28,21 +28,31 @@ pub const String = extern struct {
         return empty;
     }
     pub fn deinit(s: String, allocator: mem.Allocator) void {
-        if (s.len != 0 and s.items != empty.items) allocator.free(s.items[0..s.len]);
+        if (s.len != 0 and s.items != empty.items)
+            allocator.free(s.items[0..s.len]);
     }
     pub fn slice(s: String) []const u8 {
         return s.items[0..s.len];
     }
-    pub const format = if (@hasDecl(extern_types, "fmtdebug")) formatDebug else formatStandard;
-    pub fn formatDebug(s: String, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub const format = if (@hasDecl(extern_types, "fmtdebug"))
+        formatDebug
+    else
+        formatStandard;
+    pub fn formatDebug(
+        s: String,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
         try writer.print("{*}/{}-", .{ s.items, s.len });
     }
-    pub fn formatStandard(s: String, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        if (s.len > 0) try writer.print(
-            \\"{s}"
-        , .{s.slice()}) else _ = try writer.write(
-            \\""
-        );
+    pub fn formatStandard(
+        s: String,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        if (s.len > 0) try writer.print("{s}", .{s.slice()});
     }
 };
 

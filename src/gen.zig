@@ -86,8 +86,8 @@ fn writeFieldTypeNameHelp(
 }
 
 fn typenamesMatch(absolute_typename: []const u8, typename: []const u8) bool {
-    // std.debug.print("absolute_typename {s} typename {s}\n", .{ absolute_typename, typename });
-    return absolute_typename[0] == '.' and mem.eql(u8, absolute_typename[1..], typename);
+    return absolute_typename[0] == '.' and
+        mem.eql(u8, absolute_typename[1..], typename);
 }
 
 fn writeFieldTypeName(
@@ -98,8 +98,13 @@ fn writeFieldTypeName(
     ctx: anytype,
 ) !void {
     const field_typename = field.type_name.slice();
-    if (field_typename.len == 0) return error.MissingTypename;
+    if (!field.isPresentField(.type_name) and field.isPresentField(.type)) {
+        const type_name = scalarFieldZigTypeName(field);
+        return writeFieldTypeNameHelp(prefix, "", suffix, type_name, ctx);
+    }
 
+    // search for the typename in deps
+    // TODO - should this maybe should be limited to only certain deps?
     const file_identifier = outer: for (ctx.base.req.proto_file.slice()) |pf| {
         if (pf == proto_file) continue;
         for (pf.message_type.slice()) |it| {
@@ -116,11 +121,18 @@ fn writeFieldTypeName(
         }
     } else "";
 
+    // if within same package, remove leading '.package.'
     if (proto_file.isPresentField(.package)) {
         const package = proto_file.package.slice();
         if (mem.startsWith(u8, field_typename[1..], package)) {
             const type_name = field_typename[2 + proto_file.package.len ..];
-            try writeFieldTypeNameHelp(prefix, file_identifier, suffix, type_name, ctx);
+            return writeFieldTypeNameHelp(
+                prefix,
+                file_identifier,
+                suffix,
+                type_name,
+                ctx,
+            );
         }
     }
 
@@ -145,7 +157,10 @@ fn scalarFieldZigTypeName(field: *const FieldDescriptorProto) []const u8 {
         .TYPE_SINT32 => "i32",
         .TYPE_SINT64 => "i64",
         .TYPE_BYTES => "pbtypes.BinaryData",
-        .TYPE_MESSAGE, .TYPE_ENUM, .TYPE_ERROR, .TYPE_GROUP => unreachable,
+        .TYPE_MESSAGE, .TYPE_ENUM, .TYPE_ERROR, .TYPE_GROUP => {
+            // std.log.err("field {} {s} {s}", .{ field.name, field.label.tagName(), field.type.tagName() });
+            unreachable;
+        },
     };
 }
 
@@ -171,16 +186,16 @@ fn scalarFieldZigDefault(field: *const FieldDescriptorProto) []const u8 {
     };
 }
 
-fn writeFieldType(field: *const FieldDescriptorProto, proto_file: *const FileDescriptorProto, ctx: anytype) !void {
+fn writeFieldType(
+    field: *const FieldDescriptorProto,
+    proto_file: *const FileDescriptorProto,
+    ctx: anytype,
+) !void {
     const is_list = field.label == .LABEL_REPEATED;
     if (is_list) _ = try ctx.writer.write("ArrayListMut(");
     switch (field.type) {
-        .TYPE_ENUM,
-        .TYPE_MESSAGE,
-        => if (is_list)
-            try writeFieldTypeName("*", field, "", proto_file, ctx)
-        else
-            try writeFieldTypeName("", field, "", proto_file, ctx),
+        .TYPE_MESSAGE => try writeFieldTypeName("*", field, "", proto_file, ctx),
+        .TYPE_ENUM => try writeFieldTypeName("", field, "", proto_file, ctx),
         else => _ = try ctx.writer.write(scalarFieldZigTypeName(field)),
     }
     if (is_list) _ = try ctx.writer.write(")");
@@ -211,11 +226,7 @@ pub fn genMessage(
         if (field.label == .LABEL_REPEATED) {
             _ = try ctx.writer.write(".{}");
         } else switch (field.type) {
-            .TYPE_ENUM => _ = try ctx.writer.write("undefined"),
-            .TYPE_MESSAGE => {
-                try writeFieldType(field, proto_file, ctx);
-                _ = try ctx.writer.write(".init()");
-            },
+            .TYPE_ENUM, .TYPE_MESSAGE => _ = try ctx.writer.write("undefined"),
             else => _ = try ctx.writer.write(scalarFieldZigDefault(field)),
         }
         _ = try ctx.writer.write(",\n");
@@ -243,8 +254,9 @@ pub fn genMessage(
             try writeFieldTypeName("", field, "", proto_file, ctx);
             switch (field.type) {
                 .TYPE_ENUM => //
-                try ctx.writer.print(" = .{s};", .{field.default_value.slice()}),
-                else => todo("default {s}", .{field.type.tagName()}),
+                try ctx.writer.print(" = .{s};\n", .{field.default_value.slice()}),
+                else => //
+                try ctx.writer.print(" = {s};\n", .{field.default_value.slice()}),
             }
         }
     }
@@ -267,6 +279,7 @@ pub fn genMessage(
             \\.{s},
             \\.{s},
             \\ @offsetOf({s}, "{s}"),
+            \\
         , .{
             field.name.slice(),
             field.number,
@@ -289,7 +302,7 @@ pub fn genMessage(
 
         // default value arg
         if (field.isPresentField(.default_value))
-            try ctx.writer.print("&{s}_default,", .{field.name.slice()})
+            try ctx.writer.print("&{s}_default,\n", .{field.name.slice()})
         else
             _ = try ctx.writer.write("null,\n");
 
@@ -321,10 +334,10 @@ pub fn genEnum(
     enumproto: *const EnumDescriptorProto,
     ctx: anytype,
 ) !void {
-    const bits = @max(8, try std.math.ceilPowerOfTwo(
+    const bits = try std.math.ceilPowerOfTwo(usize, @max(8, std.math.log2_int_ceil(
         usize,
         @max(enumproto.value.len, 1),
-    ));
+    )));
     try ctx.writer.print(
         "pub const {s} = enum(u{}) {{\n",
         .{ enumproto.name.slice(), bits },
