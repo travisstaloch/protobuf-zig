@@ -16,7 +16,7 @@ const Message = pbtypes.Message;
 const MessageDescriptor = pbtypes.MessageDescriptor;
 const FieldDescriptor = pbtypes.FieldDescriptor;
 const FieldFlag = FieldDescriptor.FieldFlag;
-const FieldDescriptorProto = plugin.FieldDescriptorProto;
+const FieldDescriptorProto = pb.descr.FieldDescriptorProto;
 const BinaryData = pbtypes.BinaryData;
 const common = pb.common;
 const ptrAlignCast = common.ptrAlignCast;
@@ -323,7 +323,7 @@ pub const Protobuf = struct {
         }
     };
 
-    fn isPackableType(typ: plugin.FieldDescriptorProto.Type) bool {
+    fn isPackableType(typ: pb.descr.FieldDescriptorProto.Type) bool {
         return typ != .TYPE_STRING and typ != .TYPE_BYTES and
             typ != .TYPE_MESSAGE;
     }
@@ -466,7 +466,10 @@ pub const Protobuf = struct {
                 std.log.info("{s}: '{s}'", .{ field.name, bytes });
             },
             .TYPE_MESSAGE => {
-                if (wire_type != .LEN) return error.FieldMissing;
+                if (wire_type != .LEN) {
+                    std.log.err("unexpected wire_type .{s}", .{@tagName(wire_type)});
+                    return error.FieldMissing;
+                }
 
                 std.log.debug(
                     "parsing message field '{s}' len {} member {}",
@@ -479,20 +482,15 @@ pub const Protobuf = struct {
 
                 var limctx = ctx.withData(scanned_member.data);
                 const field_desc = field.getDescriptor(MessageDescriptor);
-                std.log.debug("sizeof_message {}", .{field_desc.sizeof_message});
+                std.log.debug(
+                    ".{s} {s} sizeof={}",
+                    .{ field.label.tagName(), field_desc.name, field_desc.sizeof_message },
+                );
 
                 if (field.label == .LABEL_REPEATED) {
-                    std.log.debug(
-                        ".repeated {s} sizeof={}",
-                        .{ field_desc.name, field_desc.sizeof_message },
-                    );
                     const subm = try deserialize(field_desc, &limctx);
                     listAppend(member, ListMut(*Message), subm);
                 } else {
-                    std.log.debug(
-                        ".single {s} sizeof={}",
-                        .{ field_desc.name, field_desc.sizeof_message },
-                    );
                     const subm = ptrAlignCast(**Message, member);
                     subm.* = try deserialize(field_desc, &limctx);
                 }
@@ -545,7 +543,7 @@ pub const Protobuf = struct {
         const show_summary = false;
         var tmpbuf: if (show_summary) [mem.page_size]u8 else void = undefined;
 
-        var last_field: ?*const FieldDescriptor = &desc.fields.items[0];
+        var last_field: ?*const FieldDescriptor = desc.fields.items[0];
         var last_field_index: u7 = 0;
         // TODO make this dynamic
         var required_fields_bitmap = std.StaticBitSet(128).initEmpty();
@@ -595,7 +593,7 @@ pub const Protobuf = struct {
                         "(scan) found field_id={} at index={}",
                         .{ key.field_id, field_index },
                     );
-                    mfield = &desc.fields.items[field_index];
+                    mfield = desc.fields.items[field_index];
                     last_field = mfield;
                     last_field_index = @intCast(u7, field_index);
                 } else |_| {

@@ -13,10 +13,12 @@ const String = extern_types.String;
 const List = extern_types.ArrayList;
 const ListMut = extern_types.ListMut;
 const ListMutScalar = extern_types.ListMutScalar;
-const plugin = pb.plugin;
-const FieldDescriptorProto = plugin.FieldDescriptorProto;
+const descr = pb.descr;
+const FieldDescriptorProto = descr.FieldDescriptorProto;
+const DescriptorProto = descr.DescriptorProto;
 const common = pb.common;
 const flagsContain = common.flagsContain;
+const top_level = @This();
 
 pub const SERVICE_DESCRIPTOR_MAGIC = 0x14159bc3;
 pub const MESSAGE_DESCRIPTOR_MAGIC = 0x28aaeef9;
@@ -85,26 +87,6 @@ pub fn FormatFn(comptime T: type) type {
     return fn (T, comptime []const u8, std.fmt.FormatOptions, anytype) WriteErr!void;
 }
 
-fn optionalFieldIds(comptime field_descriptors: []const FieldDescriptor) []const c_uint {
-    var result: [field_descriptors.len]c_uint = undefined;
-    var count: u32 = 0;
-    for (field_descriptors) |fd| {
-        if (fd.label == .LABEL_OPTIONAL) {
-            result[count] = fd.id;
-            count += 1;
-        }
-    }
-    return result[0..count];
-}
-
-fn fieldIds(comptime field_descriptors: []const FieldDescriptor) []const c_uint {
-    var result: [field_descriptors.len]c_uint = undefined;
-    for (field_descriptors) |fd, i| {
-        result[i] = fd.id;
-    }
-    return &result;
-}
-
 fn fieldIndicesByName(comptime field_descriptors: []const FieldDescriptor) []const c_uint {
     const Tup = struct { c_uint, []const u8 };
     var tups: [field_descriptors.len]Tup = undefined;
@@ -147,8 +129,6 @@ pub fn MessageMixins(comptime Self: type) type {
         pub const init = Init(Self);
         pub const initBytes = InitBytes(Self);
         pub const format = Format(Self);
-        pub const field_ids = fieldIds(&Self.field_descriptors);
-        pub const opt_field_ids = optionalFieldIds(&Self.field_descriptors);
         pub const descriptor = MessageDescriptor.init(Self);
         // TODO rename setPresentField() => setPresent()
         pub const setPresentField = SetPresentField(Self);
@@ -250,13 +230,13 @@ pub const FieldDescriptor = extern struct {
     }
 
     pub fn initRecursive(
-        name: [:0]const u8,
+        comptime name: [:0]const u8,
         id: u32,
         label: FieldDescriptorProto.Label,
         typ: FieldDescriptorProto.Type,
-        offset: c_uint,
-        descriptor: ?*const anyopaque,
+        comptime T: type,
         default_value: ?*const anyopaque,
+        descriptor: ?*const anyopaque,
         flags: FieldFlags,
     ) FieldDescriptor {
         return .{
@@ -264,11 +244,11 @@ pub const FieldDescriptor = extern struct {
             .id = id,
             .label = label,
             .type = typ,
-            .offset = offset,
+            .offset = @offsetOf(T, name),
+            .recursive_descriptor = true,
             .descriptor = descriptor,
             .default_value = default_value,
             .flags = flags,
-            .recursive_descriptor = true,
         };
     }
 
@@ -284,7 +264,7 @@ pub const MessageDescriptor = extern struct {
     zig_name: String = String.initEmpty(),
     package_name: String = String.initEmpty(),
     sizeof_message: usize = 0,
-    fields: List(FieldDescriptor),
+    fields: List(*const FieldDescriptor),
     field_ids: List(c_uint),
     opt_field_ids: List(c_uint),
     message_init: MessageInit = null,
@@ -297,16 +277,20 @@ pub const MessageDescriptor = extern struct {
             const typename = @typeName(T);
             const names = common.splitOn([]const u8, typename, '.');
             const name = names[1];
-
+            const fd_ptrs = blk: {
+                var result: [T.field_descriptors.len]*const FieldDescriptor = undefined;
+                for (result) |_, i| result[i] = &T.field_descriptors[i];
+                break :blk &result;
+            };
             var result: MessageDescriptor = .{
                 .magic = MESSAGE_DESCRIPTOR_MAGIC,
                 .name = String.init(name),
                 .zig_name = String.init(typename),
                 .package_name = String.init(names[0]),
                 .sizeof_message = @sizeOf(T),
-                .fields = List(FieldDescriptor).init(&T.field_descriptors),
-                .field_ids = List(c_uint).init(T.field_ids),
-                .opt_field_ids = List(c_uint).init(T.opt_field_ids),
+                .fields = List(*const FieldDescriptor).init(fd_ptrs),
+                .field_ids = List(c_uint).init(&T.field_ids),
+                .opt_field_ids = List(c_uint).init(&T.opt_field_ids),
                 .message_init = InitBytes(T),
             };
             // TODO - audit and remove unnecessary checks
@@ -314,15 +298,20 @@ pub const MessageDescriptor = extern struct {
                 var fields = result.fields.items[0..result.fields.len].*;
                 for (fields) |field, i| {
                     if (field.recursive_descriptor) {
-                        fields[i].descriptor = &result;
+                        var tmp = fields[i].*;
+                        tmp.descriptor = &result;
+                        fields[i] = &tmp;
                     }
                 }
-                result.fields = List(FieldDescriptor).init(&fields);
+                result.fields = List(*const FieldDescriptor).init(&fields);
             }
             const fields = result.fields;
             const field_ids = result.field_ids;
             const opt_field_ids = result.opt_field_ids;
-            assert(field_ids.len == fields.len);
+            if (field_ids.len != fields.len) compileErr(
+                "{s} field_ids.len {} != fields.len {}",
+                .{ @typeName(T), field_ids.len, fields.len },
+            );
             assert(opt_field_ids.len <= 64);
 
             const sizeof_message = result.sizeof_message;
@@ -515,7 +504,7 @@ pub const Message = extern struct {
         deinitImpl(m, allocator, .all_fields);
     }
 
-    fn isPointerField(f: FieldDescriptor) bool {
+    fn isPointerField(f: *const FieldDescriptor) bool {
         return f.label == .LABEL_REPEATED or
             f.type == .TYPE_STRING or
             f.type == .TYPE_MESSAGE;
@@ -728,3 +717,50 @@ pub const MessageUnknownField = extern struct {
     key: types.Key,
     data: String = String.initEmpty(),
 };
+
+fn findNameScoped(
+    field_type: []const u8,
+    proto_file: *const descr.FileDescriptorProto,
+    ctx: anytype,
+) ?*DescriptorProto {
+    _ = field_type;
+    _ = proto_file;
+    _ = ctx;
+    return null;
+}
+
+fn isRecursiveTypeImpl(
+    type_name: []const u8,
+    message: *const DescriptorProto,
+    proto_file: *const descr.FileDescriptorProto,
+    seen_type_names: *StringSet,
+    ctx: anytype,
+) mem.Allocator.Error!bool {
+    if (seen_type_names.contains(type_name)) return true;
+
+    for (message.field.slice()) |field| {
+        const field_type = field.type_name;
+        const mmessage = findNameScoped(field_type.slice(), proto_file, ctx);
+        if (mmessage) |m| {
+            try seen_type_names.put(m.name.slice(), {});
+            if (try isRecursiveTypeImpl(type_name, m, seen_type_names)) return true;
+        }
+    }
+
+    return false;
+}
+
+const StringSet = std.StringHashMap(void);
+/// detects type cycles
+pub fn isRecursiveType(
+    type_name: []const u8,
+    message: *const DescriptorProto,
+    proto_file: *const descr.FileDescriptorProto,
+    ctx: anytype,
+) !bool {
+    var buf: [1024]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buf);
+    var seen_type_names = StringSet.init(fba.allocator());
+    try seen_type_names.put(type_name, {});
+    return isRecursiveTypeImpl(type_name, message, proto_file, &seen_type_names, ctx);
+}

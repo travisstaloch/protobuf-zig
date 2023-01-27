@@ -8,7 +8,7 @@ const plugin = pb.plugin;
 const protobuf = pb.protobuf;
 const ptrfmt = pb.common.ptrfmt;
 const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
-const FieldDescriptorProto = plugin.FieldDescriptorProto;
+const FieldDescriptorProto = pb.descr.FieldDescriptorProto;
 const Key = types.Key;
 
 const talloc = testing.allocator;
@@ -241,7 +241,7 @@ test "message deinit" {
 
 test "message missing required fields" {
     testing.log_level = .err;
-    const req = deserializeBytesHelper(plugin.UninterpretedOption.NamePart, "", talloc);
+    const req = deserializeBytesHelper(pb.descr.UninterpretedOption.NamePart, "", talloc);
     try testing.expectError(error.RequiredFieldMissing, req);
 }
 

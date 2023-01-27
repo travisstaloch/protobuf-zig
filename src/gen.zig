@@ -6,10 +6,10 @@ const types = pb.types;
 const todo = common.todo;
 const plugin = pb.plugin;
 const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
-const DescriptorProto = plugin.DescriptorProto;
-const EnumDescriptorProto = plugin.EnumDescriptorProto;
-const FileDescriptorProto = plugin.FileDescriptorProto;
-const FieldDescriptorProto = plugin.FieldDescriptorProto;
+const DescriptorProto = pb.descr.DescriptorProto;
+const EnumDescriptorProto = pb.descr.EnumDescriptorProto;
+const FileDescriptorProto = pb.descr.FileDescriptorProto;
+const FieldDescriptorProto = pb.descr.FieldDescriptorProto;
 const OneofDescriptorProto = plugin.OneofDescriptorProto;
 const pbtypes = pb.pbtypes;
 const FieldDescriptor = pbtypes.FieldDescriptor;
@@ -261,6 +261,29 @@ pub fn genMessage(
         }
     }
 
+    // gen field_ids and opt_field_ids
+    _ = try ctx.writer.write(
+        \\
+        \\pub const field_ids = [_]c_uint{
+    );
+    for (message.field.slice()) |field, i| {
+        if (i != 0) _ = try ctx.writer.write(", ");
+        try ctx.writer.print("{}", .{field.number});
+    }
+    _ = try ctx.writer.write(
+        \\};
+        \\pub const opt_field_ids = [_]c_uint{
+    );
+    var nwritten: usize = 0;
+    for (message.field.slice()) |field| {
+        if (field.label == .LABEL_OPTIONAL) {
+            if (nwritten != 0) _ = try ctx.writer.write(", ");
+            try ctx.writer.print("{}", .{field.number});
+            nwritten += 1;
+        }
+    }
+    _ = try ctx.writer.write("};\n");
+
     // gen field descriptors
     _ = try ctx.writer.write(
         \\
@@ -272,8 +295,13 @@ pub fn genMessage(
 
     for (message.field.slice()) |field| {
         const is_oneof = field.isPresentField(.oneof_index);
+        const is_recursive_type = false;
+        // try pbtypes.isRecursiveType(field.type_name.slice(), message, ctx);
+        if (is_recursive_type)
+            _ = try ctx.writer.write("FieldDescriptor.initRecursive(")
+        else
+            _ = try ctx.writer.write("FieldDescriptor.init(");
         try ctx.writer.print(
-            \\FieldDescriptor.init(
             \\"{s}",
             \\{},
             \\.{s},
@@ -293,7 +321,9 @@ pub fn genMessage(
         });
 
         // descriptor arg
-        switch (field.type) {
+        if (is_recursive_type)
+            _ = try ctx.writer.write("null,\n")
+        else switch (field.type) {
             .TYPE_MESSAGE,
             .TYPE_ENUM,
             => try writeFieldTypeName("&", field, ".descriptor,\n", proto_file, ctx),
@@ -405,6 +435,7 @@ pub fn genPrelude(
         \\const extern_types = pb.extern_types;
         \\const String = extern_types.String;
         \\const ArrayListMut = extern_types.ArrayListMut;
+        \\const ArrayList = extern_types.ArrayList;
         \\const pbtypes = pb.pbtypes;
         \\const EnumMixins = pbtypes.EnumMixins;
         \\const MessageMixins = pbtypes.MessageMixins;
