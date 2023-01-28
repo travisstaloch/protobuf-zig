@@ -98,7 +98,7 @@ pub fn main() !void {
         const message = try parse_ctx.deserialize(&CodeGeneratorRequest.descriptor);
         const req = try message.as(CodeGeneratorRequest);
         var gen_ctx = gen.context(zig_out, alloc, req);
-        try gen_ctx.gen(req);
+        try gen_ctx.gen();
     } else {
         std.log.err("TODO support decode='{s}'", .{decode});
     }

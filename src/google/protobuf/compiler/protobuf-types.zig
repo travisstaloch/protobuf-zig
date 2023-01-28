@@ -230,23 +230,24 @@ pub const FieldDescriptor = extern struct {
     }
 
     pub fn initRecursive(
-        comptime name: [:0]const u8,
+        name: [:0]const u8,
         id: u32,
         label: FieldDescriptorProto.Label,
         typ: FieldDescriptorProto.Type,
+        offset: c_uint,
         comptime T: type,
         default_value: ?*const anyopaque,
-        descriptor: ?*const anyopaque,
         flags: FieldFlags,
     ) FieldDescriptor {
+        _ = T;
         return .{
             .name = String.init(name),
             .id = id,
             .label = label,
             .type = typ,
-            .offset = @offsetOf(T, name),
+            .offset = offset,
             .recursive_descriptor = true,
-            .descriptor = descriptor,
+            .descriptor = null,
             .default_value = default_value,
             .flags = flags,
         };
@@ -717,50 +718,3 @@ pub const MessageUnknownField = extern struct {
     key: types.Key,
     data: String = String.initEmpty(),
 };
-
-fn findNameScoped(
-    field_type: []const u8,
-    proto_file: *const descr.FileDescriptorProto,
-    ctx: anytype,
-) ?*DescriptorProto {
-    _ = field_type;
-    _ = proto_file;
-    _ = ctx;
-    return null;
-}
-
-fn isRecursiveTypeImpl(
-    type_name: []const u8,
-    message: *const DescriptorProto,
-    proto_file: *const descr.FileDescriptorProto,
-    seen_type_names: *StringSet,
-    ctx: anytype,
-) mem.Allocator.Error!bool {
-    if (seen_type_names.contains(type_name)) return true;
-
-    for (message.field.slice()) |field| {
-        const field_type = field.type_name;
-        const mmessage = findNameScoped(field_type.slice(), proto_file, ctx);
-        if (mmessage) |m| {
-            try seen_type_names.put(m.name.slice(), {});
-            if (try isRecursiveTypeImpl(type_name, m, seen_type_names)) return true;
-        }
-    }
-
-    return false;
-}
-
-const StringSet = std.StringHashMap(void);
-/// detects type cycles
-pub fn isRecursiveType(
-    type_name: []const u8,
-    message: *const DescriptorProto,
-    proto_file: *const descr.FileDescriptorProto,
-    ctx: anytype,
-) !bool {
-    var buf: [1024]u8 = undefined;
-    var fba = std.heap.FixedBufferAllocator.init(&buf);
-    var seen_type_names = StringSet.init(fba.allocator());
-    try seen_type_names.put(type_name, {});
-    return isRecursiveTypeImpl(type_name, message, proto_file, &seen_type_names, ctx);
-}

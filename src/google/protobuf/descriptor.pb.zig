@@ -750,9 +750,8 @@ pub const DescriptorProto = extern struct {
             3,
             .LABEL_REPEATED,
             .TYPE_MESSAGE,
-            // @offsetOf(DescriptorProto, "nested_type"),
-            DescriptorProto,
-            null, // workaround for 'dependency loop'
+            @offsetOf(DescriptorProto, "nested_type"),
+            DescriptorProto, // workaround for 'dependency loop'
             null,
             0,
         ),
@@ -1756,4 +1755,3 @@ pub const OneofOptions = extern struct {
         ),
     };
 };
-
