@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+message NonRec {
+  Rec rec = 1;
+}
+message Rec {
+  Rec rec = 1;
+}

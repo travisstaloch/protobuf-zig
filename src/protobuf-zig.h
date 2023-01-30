@@ -35,6 +35,12 @@ LIST_DEF(PbZigString, char *);
 LIST_DEF(PbZigConstString, const char *);
 LIST_DEF(PbZigStringList, PbZigString);
 LIST_DEF(int32_tList, int32_t);
+LIST_DEF(int64_tList, int64_t);
+LIST_DEF(uint32_tList, uint32_t);
+LIST_DEF(uint64_tList, uint64_t);
+LIST_DEF(floatList, float);
+LIST_DEF(doubleList, double);
+LIST_DEF(uint8_tList, uint8_t);
 LIST_DEF(PbZigFieldDescriptorList, const PbZigFieldDescriptor *);
 LIST_DEF(PbZigEnumValueList, const PbZigEnumValue *);
 

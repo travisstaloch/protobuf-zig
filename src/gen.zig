@@ -863,6 +863,13 @@ pub fn genEnumC(
         _ = try ch_writer.write("} ");
         try writeCName(ch_writer, proto_file.package, node, ctx, null);
         _ = try ch_writer.write(";\n");
+
+        // gen 'LIST_DEF(nameList, name);'
+        _ = try ch_writer.write("LIST_DEF(");
+        try writeCName(ch_writer, proto_file.package, node, ctx, null);
+        _ = try ch_writer.write("List, ");
+        try writeCName(ch_writer, proto_file.package, node, ctx, null);
+        _ = try ch_writer.write(");\n");
     }
     { // genEnumCImpl
         const cc_writer = ctx.cc_file.writer();
@@ -986,13 +993,42 @@ fn filePackageNames(filename: String, buf: []u8) ![2][]const u8 {
     return .{ package_name, prefix };
 }
 
-pub fn genImport(dep: String, ctx: *Context) !void {
-    const names = try filePackageNames(dep, &ctx.buf);
+pub fn genImport(
+    dep: String,
+    proto_file: *const FileDescriptorProto,
+    ctx: *Context,
+) !void {
     const zig_writer = ctx.zig_file.writer();
-    try zig_writer.print(
-        "const {s} = @import(\"{s}.{s}\");\n",
-        .{ names[0], names[1], zig_extension },
-    );
+    // turn /a/b/c.proto info 'const c = @import("/a/b/c.pb.zig");'
+    const last_dot_i = mem.lastIndexOfScalar(u8, dep.slice(), '.') orelse
+        dep.len;
+    // if proto_file.name() is /a/b/c and dep is /a/b/d, remove leading /a/b/
+    // from the import path
+    const last_slash_i = if (mem.lastIndexOfScalar(u8, dep.slice(), '/')) |i|
+        i + 1
+    else
+        0;
+    // discover and remove common path
+    var i: usize = 0;
+    const max = @min(last_slash_i, proto_file.name.len);
+    while (i < max and dep.items[i] == proto_file.name.items[i]) : (i += 1) {}
+
+    const ident = dep.items[last_slash_i..last_dot_i];
+    const path = dep.items[i..last_dot_i];
+
+    // if there are '/' in proto_file.name after common prefix, it means that
+    // dep is in a folder above proto_file. if so, we must add a '../' for each
+    // slash.
+    const pfname_rest = proto_file.name.items[i..proto_file.name.len];
+    const dotdot_count = mem.count(u8, pfname_rest, "/");
+    // if the ident is a zig keyword, add a trailing '_'
+    const is_keyword = std.zig.Token.keywords.get(ident) != null;
+    const suffix = if (is_keyword) "_" else "";
+    try zig_writer.print("const {s}{s} = @import(\"", .{ ident, suffix });
+    var j: u8 = 0;
+    while (j < dotdot_count) : (j += 1)
+        _ = try zig_writer.write("../");
+    try zig_writer.print("{s}.{s}\");\n", .{ path, zig_extension });
 }
 
 pub fn genPrelude(
@@ -1023,7 +1059,7 @@ pub fn genPrelude(
                 .{dep},
                 error.MissingDependency,
             );
-            try genImport(dep, ctx);
+            try genImport(dep, proto_file, ctx);
         }
         _ = try zig_writer.write("\n");
     }
@@ -1032,12 +1068,12 @@ pub fn genPrelude(
         const ch_writer = ctx.ch_file.writer();
         _ = try ch_writer.write("#include <protobuf-zig.h>\n");
         for (proto_file.dependency.slice()) |dep| {
-            const depnames = try filePackageNames(dep, &ctx.buf);
+            const parts = common.splitOn([]const u8, dep.slice(), '.');
             try ch_writer.print(
                 \\#include "{s}.{s}"
                 \\
                 \\
-            , .{ depnames[0], ch_extension });
+            , .{ parts[0], ch_extension });
         }
     }
 

@@ -25,8 +25,8 @@ pub const PtrFmt = struct {
 pub fn firstNBytes(s: []const u8, n: usize) []const u8 {
     return s[0..@min(s.len, n)];
 }
-pub fn afterLastIndexOf(s: []const u8, delimiter: u8) []const u8 {
-    const start = if (mem.lastIndexOfScalar(u8, s, delimiter)) |i| i + 1 else 0;
+pub fn afterLastIndexOf(s: []const u8, delimeter: u8) []const u8 {
+    const start = if (mem.lastIndexOfScalar(u8, s, delimeter)) |i| i + 1 else 0;
     return s[start..];
 }
 fn WithSentinel(comptime T: type) type {
@@ -35,8 +35,9 @@ fn WithSentinel(comptime T: type) type {
     else
         T;
 }
-pub fn splitOn(comptime T: type, s: T, delimiter: std.meta.Child(T)) [2]T {
-    const start = if (mem.lastIndexOfScalar(std.meta.Child(T), s, delimiter)) |i| i else 0;
+/// split on last instance of 'delimeter'
+pub fn splitOn(comptime T: type, s: T, delimeter: std.meta.Child(T)) [2]T {
+    const start = if (mem.lastIndexOfScalar(std.meta.Child(T), s, delimeter)) |i| i else 0;
     return [2]T{ s[0..start], s[start + 1 ..] };
 }
 pub fn todo(comptime fmt: []const u8, args: anytype) noreturn {
