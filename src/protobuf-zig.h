@@ -24,6 +24,9 @@ static const uint32_t ENUM_DESCRIPTOR_MAGIC = 0x114315af;
 #define STRING_INIT(items) \
   { ARRAY_SIZE(items) - 1, (items) }
 
+#define PbZigString_empty STRING_INIT("")
+#define List_empty {0}
+
 typedef struct PbZigMessageDescriptor PbZigMessageDescriptor;
 typedef struct PbZigFieldDescriptor PbZigFieldDescriptor;
 typedef struct PbZigEnumDescriptor PbZigEnumDescriptor;
@@ -43,8 +46,6 @@ LIST_DEF(doubleList, double);
 LIST_DEF(uint8_tList, uint8_t);
 LIST_DEF(PbZigFieldDescriptorList, const PbZigFieldDescriptor *);
 LIST_DEF(PbZigEnumValueList, const PbZigEnumValue *);
-
-#define PbZigString_empty (PbZigString){0, ""}
 
 typedef void (*PbZigMessageInit)(PbZigMessage *);
 

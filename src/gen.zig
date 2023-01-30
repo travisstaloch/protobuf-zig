@@ -364,6 +364,35 @@ pub fn genMessageCTypedef(
         try genMessageCTypedef(nested, proto_file, ctx);
 }
 
+/// writes a name like this: GOOGLE__PROTOBUF__FILE_DESCRIPTOR_SET
+fn writeCMacroName(
+    writer: anytype,
+    package: String,
+    node: Node,
+    ctx: ?*Context,
+) !void {
+    // write package
+    if (package.len > 0) {
+        try writeSplitDottedIdent(package, writer, toUpper);
+        _ = try writer.write("__");
+    }
+
+    // write 'parent names'.
+    // nested messages and enums have 'parent names' which need to be included.
+    // field names (.named) are absolute and don't need parent names included.
+    if (switch (node) {
+        .enum_ => |ptr| @ptrCast(?*const anyopaque, ptr),
+        .message => |ptr| @ptrCast(?*const anyopaque, ptr),
+        .named => null,
+    }) |id| blk: {
+        const parent = ctx.?.parents.get(id) orelse break :blk;
+        try writeParentNames(parent, writer, ctx.?);
+    }
+
+    // write name
+    try writeTitleCase(writer, node.name());
+}
+
 pub fn genMessageC(
     message: *const DescriptorProto,
     proto_file: *const FileDescriptorProto,
@@ -407,20 +436,22 @@ pub fn genMessageC(
 
         // -- gen message init
         _ = try ch_writer.write("#define ");
-        try writeTitleCase(ch_writer, message.name);
+        try writeCMacroName(ch_writer, proto_file.package, node, ctx);
         _ = try ch_writer.write(
-            \\__INIT \
-            \\{ PBZIG_MESSAGE_INIT (&
+            \\__INIT { \
+            \\PBZIG_MESSAGE_INIT(&
         );
 
         try writeCName(ch_writer, proto_file.package, node, ctx, null);
         _ = try ch_writer.write(
-            \\__descriptor) \
+            \\__descriptor), \
             \\
         );
 
-        for (message.field.slice()) |field, i| {
-            if (i != 0) _ = try ch_writer.write(", \\\n");
+        var nwritten: usize = 0;
+        for (message.field.slice()) |field| {
+            if (field.isPresentField(.oneof_index)) continue;
+            if (nwritten != 0) _ = try ch_writer.write(", \\\n");
             if (field.isPresentField(.default_value)) switch (field.type) {
                 .TYPE_ENUM => _ = {
                     const type_name = common.splitOn([]const u8, field.type_name.slice(), '.')[1];
@@ -432,18 +463,15 @@ pub fn genMessageC(
                     .{ pbzig_prefix, field.default_value },
                 ),
                 else => _ = try ch_writer.write(field.default_value.slice()),
-            } else switch (field.type) {
+            } else if (field.label == .LABEL_REPEATED)
+                _ = try ch_writer.write("List_empty")
+            else switch (field.type) {
                 // TODO find and use first enum field
                 .TYPE_ENUM => _ = try ch_writer.write("0"), // FIXME wrong
-                .TYPE_MESSAGE => {
-                    if (!field.isPresentField(.type_name))
-                        return error.FieldMissingType;
-                    const fieldnode: Node = .{ .named = field.type_name };
-                    try writeCName(ch_writer, proto_file.package, fieldnode, ctx, std.ascii.toUpper);
-                    _ = try ch_writer.write("__INIT");
-                },
+                .TYPE_MESSAGE => _ = try ch_writer.write("NULL"),
                 else => _ = try ch_writer.write(scalarFieldCDefault(field)),
             }
+            nwritten += 1;
         }
         _ = try ch_writer.write(
             \\}
@@ -493,13 +521,12 @@ pub fn genMessageC(
         for (message.field.slice()) |field| {
             try cc_writer.print(
                 \\{{
-                \\{{{}, "{s}"}},
+                \\STRING_INIT("{s}"),
                 \\{},
                 \\{s},
                 \\{s},
-                \\ offsetof(
+                \\offsetof(
             , .{
-                field.name.len,
                 field.name,
                 field.number,
                 field.label.tagName(),
@@ -538,15 +565,31 @@ pub fn genMessageC(
                     "0",
             });
         }
-        _ = try cc_writer.write("};\n\n");
 
-        // TODO gen init()
-        // void   google__protobuf__ServiceDescriptorProto__init
-        //              (google__protobuf__ServiceDescriptorProto         *message)
-        // {
-        //   static const google__protobuf__ServiceDescriptorProto init_value = GOOGLE__PROTOBUF__SERVICE_DESCRIPTOR_PROTO__INIT;
-        //   *message = init_value;
-        // }
+        // gen init()
+        _ = try cc_writer.write(
+            \\};
+            \\
+            \\
+            \\void 
+        );
+        try writeCName(cc_writer, proto_file.package, node, ctx, null);
+        _ = try cc_writer.write("__init(");
+        try writeCName(cc_writer, proto_file.package, node, ctx, null);
+        _ = try cc_writer.write(
+            \\ *message) {
+            \\static const 
+        );
+        try writeCName(cc_writer, proto_file.package, node, ctx, null);
+        _ = try cc_writer.write(" init_value = ");
+        try writeCMacroName(cc_writer, proto_file.package, node, ctx);
+        _ = try cc_writer.write(
+            \\__INIT;
+            \\*message = init_value;
+            \\}
+            \\
+            \\
+        );
 
         // gen descriptor
         _ = try cc_writer.write("const PbZigMessageDescriptor ");
@@ -554,8 +597,8 @@ pub fn genMessageC(
         try cc_writer.print(
             \\__descriptor = {{
             \\MESSAGE_DESCRIPTOR_MAGIC,
-            \\STRING_INIT("{s}.{s}"), // name
-            \\STRING_INIT("{s}"), // short_name
+            \\STRING_INIT("{s}.{s}"),
+            \\STRING_INIT("{s}"),
             \\STRING_INIT("
         , .{
             proto_file.package,
@@ -564,8 +607,8 @@ pub fn genMessageC(
         });
         try writeCName(cc_writer, proto_file.package, node, ctx, null);
         try cc_writer.print(
-            \\"),  // c_name
-            \\STRING_INIT("{s}"), // package_name
+            \\"),
+            \\STRING_INIT("{s}"),
             \\sizeof(
         , .{
             proto_file.package,
@@ -578,7 +621,11 @@ pub fn genMessageC(
         try writeCName(cc_writer, proto_file.package, node, ctx, null);
         _ = try cc_writer.write(
             \\__field_descriptors),
-            \\NULL, // TODO message_init (ProtobufCMessageInit) google__protobuf__ServiceDescriptorProto__init
+            \\(PbZigMessageInit) 
+        );
+        try writeCName(cc_writer, proto_file.package, node, ctx, null);
+        _ = try cc_writer.write(
+            \\__init,
             \\NULL,
             \\NULL,
             \\NULL,
@@ -830,24 +877,40 @@ fn writeCName(
     try writeSplitDottedIdent(node.name(), writer, mtransform_char_fn);
 }
 
-/// convert from camelCase to TITLE_CASE
-const writeTitleCase = fromCamelCase(std.ascii.toUpper);
-/// convert from camelCase to snake_case
-const writeSnakeCase = fromCamelCase(std.ascii.toLower);
+const isUpper = std.ascii.isUpper;
+const toLower = std.ascii.toLower;
+const toUpper = std.ascii.toUpper;
 
-/// 'xYZa' become x_YZa.
-fn fromCamelCase(comptime func: fn (u8) u8) fn (anytype, String) std.fs.File.WriteError!void {
-    return struct {
-        fn writeFn(writer: anytype, name: String) std.fs.File.WriteError!void {
-            var state: enum { lower, upper } = .lower;
-            for (name.slice()) |c, i| {
-                const isupper = std.ascii.isUpper(c);
-                if (i != 0 and isupper and state == .lower) _ = try writer.write("_");
-                try writer.writeByte(func(c));
-                state = if (isupper) .upper else .lower;
-            }
+/// convert from camelCase to snake_case
+fn writeSnakeCase(writer: anytype, name: String) !void {
+    var was_upper = true;
+    for (name.slice()) |c| {
+        const is_upper = isUpper(c);
+        if (is_upper) {
+            if (!was_upper)
+                _ = try writer.write("_");
+            _ = try writer.writeByte(toLower(c));
+        } else {
+            _ = try writer.writeByte(c);
         }
-    }.writeFn;
+        was_upper = is_upper;
+    }
+}
+
+/// convert from camelCase to TITLE_CASE
+fn writeTitleCase(writer: anytype, name: String) !void {
+    var was_upper = true;
+    for (name.slice()) |c| {
+        const is_upper = isUpper(c);
+        if (is_upper) {
+            if (!was_upper)
+                _ = try writer.write("_");
+            _ = try writer.writeByte(c);
+        } else {
+            _ = try writer.writeByte(toUpper(c));
+        }
+        was_upper = is_upper;
+    }
 }
 
 pub fn genEnumC(
@@ -876,6 +939,11 @@ pub fn genEnumC(
         _ = try ch_writer.write("List, ");
         try writeCName(ch_writer, proto_file.package, node, ctx, null);
         _ = try ch_writer.write(");\n\n");
+
+        // gen descriptor extern
+        try ch_writer.print("extern const {s}EnumDescriptor ", .{pbzig_prefix});
+        try writeCName(ch_writer, proto_file.package, node, ctx, null);
+        _ = try ch_writer.write("__descriptor;\n");
     }
     { // genEnumCImpl
         const cc_writer = ctx.cc_file.writer();
@@ -886,9 +954,8 @@ pub fn genEnumC(
 
         for (enumproto.value.slice()) |value| {
             try cc_writer.print(
-                \\{{ {{{}, "{s}"}}, STRING_INIT("
+                \\{{ STRING_INIT("{s}"), STRING_INIT("
             , .{
-                value.name.len,
                 value.name,
             });
             try writeTitleCase(cc_writer, enumproto.name);
@@ -908,8 +975,8 @@ pub fn genEnumC(
         try cc_writer.print(
             \\__descriptor = {{
             \\ENUM_DESCRIPTOR_MAGIC,
-            \\STRING_INIT("{s}.{s}"), // name
-            \\STRING_INIT("{s}"), // short_name
+            \\STRING_INIT("{s}.{s}"),
+            \\STRING_INIT("{s}"),
             \\STRING_INIT("
         , .{
             proto_file.package,
@@ -918,8 +985,8 @@ pub fn genEnumC(
         });
         try writeCName(cc_writer, proto_file.package, node, ctx, null);
         try cc_writer.print(
-            \\"), // c_name
-            \\STRING_INIT("{s}"), // package_name
+            \\"),
+            \\STRING_INIT("{s}"),
             \\LIST_INIT(
         , .{
             proto_file.package,
