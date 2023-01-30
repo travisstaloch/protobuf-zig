@@ -340,6 +340,9 @@ pub fn genMessageCTypedef(
     proto_file: *const FileDescriptorProto,
     ctx: *Context,
 ) !void {
+    for (message.enum_type.slice()) |enum_type|
+        try genEnumC(enum_type, proto_file, ctx);
+
     // gen 'typdef name name;'
     const ch_writer = ctx.ch_file.writer();
     _ = try ch_writer.write("typedef struct ");
@@ -369,9 +372,6 @@ pub fn genMessageC(
     for (message.nested_type.slice()) |nested|
         try genMessageC(nested, proto_file, ctx);
 
-    for (message.enum_type.slice()) |enum_type|
-        try genEnumC(enum_type, proto_file, ctx);
-
     const node: Node = .{ .message = message };
     { // genMessageCHeader
         const ch_writer = ctx.ch_file.writer();
@@ -390,6 +390,19 @@ pub fn genMessageC(
             const field_name = field.name.slice();
             try ch_writer.print("{s};\n", .{field_name});
         }
+
+        // gen oneof union fields separately because they are grouped by field.oneof_index
+        for (message.oneof_decl.slice()) |_, i| {
+            _ = try ch_writer.write("union {\n");
+            for (message.field.slice()) |field| {
+                if (field.isPresentField(.oneof_index) and field.oneof_index == i) {
+                    try writeCFieldType(field, null, ch_writer);
+                    try ch_writer.print(" {s};\n", .{field.name});
+                }
+            }
+            _ = try ch_writer.write("};\n");
+        }
+
         _ = try ch_writer.write("};\n\n");
 
         // -- gen message init
@@ -478,8 +491,6 @@ pub fn genMessageC(
             \\
         , .{message.field.len});
         for (message.field.slice()) |field| {
-            const is_oneof = field.isPresentField(.oneof_index);
-
             try cc_writer.print(
                 \\{{
                 \\{{{}, "{s}"}},
@@ -498,12 +509,7 @@ pub fn genMessageC(
             try cc_writer.print(
                 \\, {s}),
                 \\
-            , .{
-                if (is_oneof)
-                    message.oneof_decl.items[@intCast(usize, field.oneof_index)].name
-                else
-                    field.name,
-            });
+            , .{field.name});
 
             // descriptor arg
             switch (field.type) {
@@ -526,7 +532,7 @@ pub fn genMessageC(
                 \\}},
                 \\
             , .{
-                if (is_oneof)
+                if (field.isPresentField(.oneof_index))
                     "0 | FIELD_FLAG_ONEOF"
                 else
                     "0",
@@ -869,7 +875,7 @@ pub fn genEnumC(
         try writeCName(ch_writer, proto_file.package, node, ctx, null);
         _ = try ch_writer.write("List, ");
         try writeCName(ch_writer, proto_file.package, node, ctx, null);
-        _ = try ch_writer.write(");\n");
+        _ = try ch_writer.write(");\n\n");
     }
     { // genEnumCImpl
         const cc_writer = ctx.cc_file.writer();
@@ -1072,7 +1078,6 @@ pub fn genPrelude(
             try ch_writer.print(
                 \\#include "{s}.{s}"
                 \\
-                \\
             , .{ parts[0], ch_extension });
         }
     }
@@ -1090,21 +1095,65 @@ pub fn genPrelude(
     }
 }
 
+pub fn printToAll(
+    ctx: *Context,
+    comptime fmt: []const u8,
+    args: anytype,
+) !void {
+    try ctx.zig_file.writer().print(fmt, args);
+    try ctx.ch_file.writer().print(fmt, args);
+    try ctx.cc_file.writer().print(fmt, args);
+}
 pub fn genFile(
     proto_file: *const FileDescriptorProto,
     ctx: *Context,
 ) !void {
+    try printToAll(ctx,
+        \\// ---
+        \\// prelude
+        \\// ---
+        \\
+        \\
+    , .{});
     try genPrelude(proto_file, ctx);
 
+    try printToAll(ctx,
+        \\
+        \\// ---
+        \\// typedefs
+        \\// ---
+        \\
+        \\
+    , .{});
     for (proto_file.enum_type.slice()) |enum_proto| {
         try genEnumC(enum_proto, proto_file, ctx);
-        try genEnumTest(enum_proto, proto_file, ctx);
     }
 
     for (proto_file.message_type.slice()) |desc_proto|
         try genMessageCTypedef(desc_proto, proto_file, ctx);
+
+    try printToAll(ctx,
+        \\
+        \\// ---
+        \\// message types
+        \\// ---
+        \\
+        \\
+    , .{});
     for (proto_file.message_type.slice()) |desc_proto| {
         try genMessageC(desc_proto, proto_file, ctx);
+    }
+
+    try printToAll(ctx,
+        \\
+        \\// ---
+        \\// tests
+        \\// ---
+        \\
+        \\
+    , .{});
+    for (proto_file.enum_type.slice()) |enum_proto| {
+        try genEnumTest(enum_proto, proto_file, ctx);
     }
     for (proto_file.message_type.slice()) |desc_proto| {
         try genMessageTest(desc_proto, proto_file, ctx);

@@ -75,6 +75,13 @@ typedef enum {
   TYPE_MESSAGE,
 } PbZigType;
 
+typedef enum {
+  FIELD_FLAG_PACKED    = (1 << 0),
+  FIELD_FLAG_DEPRECATED  = (1 << 1),
+  FIELD_FLAG_ONEOF   = (1 << 2),
+} PbZigFieldFlag;
+
+
 struct PbZigMessageDescriptor {
   uint32_t magic;
   PbZigString name;
