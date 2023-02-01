@@ -30,7 +30,7 @@ pub const FieldDescriptorProto = extern struct {
     pub const opt_field_ids = [_]c_uint{ 1, 3, 4, 5, 6, 2, 7, 9, 10, 8, 17 };
     pub usingnamespace MessageMixins(@This());
 
-    pub const Type = enum(u8) {
+    pub const Type = enum(u32) { // use u32 to match c size
         // 0 is reserved for errors.
         TYPE_ERROR = 0,
         // Order is weird for historical reasons.
@@ -66,7 +66,7 @@ pub const FieldDescriptorProto = extern struct {
         pub usingnamespace EnumMixins(@This());
     };
 
-    pub const Label = enum(u8) {
+    pub const Label = enum(u32) { // use u32 to match c size
         LABEL_ERROR = 0,
         LABEL_OPTIONAL = 1,
         LABEL_REQUIRED = 2,

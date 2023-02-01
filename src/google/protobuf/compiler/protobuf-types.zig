@@ -16,8 +16,9 @@ const ListMutScalar = extern_types.ListMutScalar;
 const descr = pb.descr;
 const FieldDescriptorProto = descr.FieldDescriptorProto;
 const DescriptorProto = descr.DescriptorProto;
+const Label = FieldDescriptorProto.Label;
+const Type = FieldDescriptorProto.Type;
 const common = pb.common;
-const flagsContain = common.flagsContain;
 const top_level = @This();
 
 pub const SERVICE_DESCRIPTOR_MAGIC = 0x14159bc3;
@@ -124,6 +125,17 @@ fn Format(comptime T: type) FormatFn(T) {
     }.format;
 }
 
+/// this must be kept in sync with constants created in MessageMixins()
+pub const reserved_words = std.ComptimeStringMap(void, .{
+    .{ "init", {} },
+    .{ "initBytes", {} },
+    .{ "format", {} },
+    .{ "setPresentField", {} },
+    .{ "isPresentField", {} },
+    .{ "descriptor", {} },
+    .{ "field_descriptors", {} },
+});
+
 pub fn MessageMixins(comptime Self: type) type {
     return struct {
         pub const init = Init(Self);
@@ -151,7 +163,7 @@ pub const EnumDescriptor = extern struct {
     magic: u32 = 0,
     name: String = String.initEmpty(),
     short_name: String = String.initEmpty(),
-    zig_name: String = String.initEmpty(),
+    c_name: String = String.initEmpty(),
     package_name: String = String.initEmpty(),
     values: List(EnumValue),
     reserved1: ?*anyopaque = null,
@@ -186,36 +198,40 @@ pub const EnumDescriptor = extern struct {
     }
 };
 
+pub fn flagsContain(flags: u32, flag: FieldDescriptor.FieldFlag) bool {
+    return flags & @enumToInt(flag) != 0;
+}
+
 pub const FieldDescriptor = extern struct {
     name: String = String.initEmpty(),
     id: c_uint = 0,
-    label: FieldDescriptorProto.Label,
-    type: FieldDescriptorProto.Type,
+    label: Label,
+    type: Type,
     offset: c_uint,
     descriptor: ?*const anyopaque = null,
     default_value: ?*const anyopaque = null,
-    flags: FieldFlags = 0,
-    recursive_descriptor: bool = false,
+    flags: u32 = 0,
     reserved_flags: c_uint = 0,
     reserved2: ?*anyopaque = null,
     reserved3: ?*anyopaque = null,
+    recursive_descriptor: bool = false, // TODO remove this field
 
-    pub const FieldFlags = pb.types.IntegerBitset(std.meta.tags(FieldFlag).len);
-    pub const FieldFlag = enum(u8) {
-        FLAG_PACKED,
-        FLAG_DEPRECATED,
-        FLAG_ONEOF,
+    pub const FieldFlag = enum(u32) { // use u32 to match c size
+        FLAG_NONE = 0,
+        FLAG_PACKED = @as(u32, 1) << 0,
+        FLAG_DEPRECATED = @as(u32, 1) << 1,
+        FLAG_ONEOF = @as(u32, 1) << 2,
     };
 
     pub fn init(
         name: [:0]const u8,
         id: u32,
-        label: FieldDescriptorProto.Label,
-        typ: FieldDescriptorProto.Type,
+        label: Label,
+        typ: Type,
         offset: c_uint,
         descriptor: ?*const anyopaque,
         default_value: ?*const anyopaque,
-        flags: FieldFlags,
+        flags: u32,
     ) FieldDescriptor {
         return .{
             .name = String.init(name),
@@ -229,15 +245,16 @@ pub const FieldDescriptor = extern struct {
         };
     }
 
+    // TODO - remove this hack
     pub fn initRecursive(
         name: [:0]const u8,
         id: u32,
-        label: FieldDescriptorProto.Label,
-        typ: FieldDescriptorProto.Type,
+        label: Label,
+        typ: Type,
         offset: c_uint,
         comptime T: type,
         default_value: ?*const anyopaque,
-        flags: FieldFlags,
+        flags: u32,
     ) FieldDescriptor {
         _ = T;
         return .{
@@ -261,11 +278,12 @@ pub const FieldDescriptor = extern struct {
 
 pub const MessageDescriptor = extern struct {
     magic: u32 = 0,
-    name: String = String.initEmpty(),
-    zig_name: String = String.initEmpty(),
+    name: String,
+    short_name: String = String.initEmpty(),
+    c_name: String = String.initEmpty(),
     package_name: String = String.initEmpty(),
     sizeof_message: usize = 0,
-    fields: List(*const FieldDescriptor),
+    fields: List(FieldDescriptor),
     field_ids: List(c_uint),
     opt_field_ids: List(c_uint),
     message_init: MessageInit = null,
@@ -278,33 +296,30 @@ pub const MessageDescriptor = extern struct {
             const typename = @typeName(T);
             const names = common.splitOn([]const u8, typename, '.');
             const name = names[1];
-            const fd_ptrs = blk: {
-                var result: [T.field_descriptors.len]*const FieldDescriptor = undefined;
-                for (result) |_, i| result[i] = &T.field_descriptors[i];
-                break :blk &result;
-            };
             var result: MessageDescriptor = .{
                 .magic = MESSAGE_DESCRIPTOR_MAGIC,
                 .name = String.init(name),
-                .zig_name = String.init(typename),
+                .c_name = String.init(typename),
                 .package_name = String.init(names[0]),
                 .sizeof_message = @sizeOf(T),
-                .fields = List(*const FieldDescriptor).init(fd_ptrs),
+                .fields = List(FieldDescriptor).init(&T.field_descriptors),
                 .field_ids = List(c_uint).init(&T.field_ids),
                 .opt_field_ids = List(c_uint).init(&T.opt_field_ids),
                 .message_init = InitBytes(T),
             };
             // TODO - audit and remove unnecessary checks
             {
+                // TODO remove this hack which just works around dependency loop
+                // along with field.recursive_descriptor
                 var fields = result.fields.items[0..result.fields.len].*;
                 for (fields) |field, i| {
                     if (field.recursive_descriptor) {
-                        var tmp = fields[i].*;
+                        var tmp = fields[i];
                         tmp.descriptor = &result;
-                        fields[i] = &tmp;
+                        fields[i] = tmp;
                     }
                 }
-                result.fields = List(*const FieldDescriptor).init(&fields);
+                result.fields = List(FieldDescriptor).init(&fields);
             }
             const fields = result.fields;
             const field_ids = result.field_ids;
@@ -320,7 +335,7 @@ pub const MessageDescriptor = extern struct {
             var n_oneof_fields: u32 = 0;
             for (fields.slice()) |field|
                 n_oneof_fields +=
-                    @boolToInt(flagsContain(field.flags, FieldDescriptor.FieldFlag.FLAG_ONEOF));
+                    @boolToInt(flagsContain(field.flags, .FLAG_ONEOF));
             const len = @typeInfo(T).Struct.fields.len;
             const actual_len = fields.len + 1 - (n_oneof_fields -| 1);
             if (actual_len != len) compileErr(
@@ -336,7 +351,7 @@ pub const MessageDescriptor = extern struct {
                 compileErr("{s} 'base' field expected 'Message' type. got '{s}'.", .{@typeName(tfields[0].type)});
             for (tfields[1..tfields.len]) |f, i| {
                 const field = fields.items[i];
-                if (!flagsContain(field.flags, FieldDescriptor.FieldFlag.FLAG_ONEOF) and
+                if (!flagsContain(field.flags, .FLAG_ONEOF) and
                     !mem.eql(u8, f.name, field.name.slice()))
                     compileErr(
                         "{s} field name mismatch. expected '{s}' got '{s}'",
@@ -505,7 +520,7 @@ pub const Message = extern struct {
         deinitImpl(m, allocator, .all_fields);
     }
 
-    fn isPointerField(f: *const FieldDescriptor) bool {
+    fn isPointerField(f: FieldDescriptor) bool {
         return f.label == .LABEL_REPEATED or
             f.type == .TYPE_STRING or
             f.type == .TYPE_MESSAGE;
@@ -527,7 +542,7 @@ pub const Message = extern struct {
         for (desc.fields.slice()) |field| {
             if (mode == .only_pointer_fields and !isPointerField(field))
                 continue;
-            if (flagsContain(field.flags, FieldDescriptor.FieldFlag.FLAG_ONEOF) and
+            if (flagsContain(field.flags, .FLAG_ONEOF) and
                 !m.isPresent(field.id))
             {
                 continue;

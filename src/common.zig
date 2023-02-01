@@ -46,10 +46,3 @@ pub fn todo(comptime fmt: []const u8, args: anytype) noreturn {
 pub fn compileErr(comptime fmt: []const u8, args: anytype) noreturn {
     @compileError(std.fmt.comptimePrint(fmt, args));
 }
-
-pub fn flagsContain(flags: anytype, flag: anytype) bool {
-    const Set = std.enums.EnumSet(@TypeOf(flag));
-    const I = @TypeOf(@as(Set, undefined).bits.mask);
-    const bitset = Set{ .bits = .{ .mask = @truncate(I, flags) } };
-    return bitset.contains(flag);
-}

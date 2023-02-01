@@ -13,19 +13,20 @@ static const uint32_t ENUM_DESCRIPTOR_MAGIC = 0x114315af;
 #define LIST_DEF(name, T) \
   typedef struct name {   \
     size_t len;           \
-    T ptr;                \
+    size_t cap;           \
+    T items;              \
   } name
 
 #define ARRAY_SIZE(x) ((sizeof x) / (sizeof *x))
 
 #define LIST_INIT(items) \
-  { ARRAY_SIZE(items), (items) }
+  { ARRAY_SIZE(items), ARRAY_SIZE(items), (items) }
 
 #define STRING_INIT(items) \
   { ARRAY_SIZE(items) - 1, (items) }
 
 #define PbZigString_empty STRING_INIT("")
-#define List_empty {0}
+#define List_empty {0, 0}
 
 typedef struct PbZigMessageDescriptor PbZigMessageDescriptor;
 typedef struct PbZigFieldDescriptor PbZigFieldDescriptor;
@@ -34,26 +35,38 @@ typedef struct PbZigEnumValue PbZigEnumValue;
 typedef struct PbZigUnknownField PbZigUnknownField;
 typedef struct PbZigMessage PbZigMessage;
 
-LIST_DEF(PbZigString, char *);
-LIST_DEF(PbZigConstString, const char *);
+typedef struct PbZigString {
+  size_t len;
+  char *items;
+} PbZigString;
+
+typedef struct PbZigConstString {
+  size_t len;
+  const char *items;
+} PbZigConstString;
+
 LIST_DEF(PbZigStringList, PbZigString);
-LIST_DEF(int32_tList, int32_t);
-LIST_DEF(int64_tList, int64_t);
-LIST_DEF(uint32_tList, uint32_t);
-LIST_DEF(uint64_tList, uint64_t);
-LIST_DEF(floatList, float);
-LIST_DEF(doubleList, double);
-LIST_DEF(uint8_tList, uint8_t);
+LIST_DEF(int32_tList, int32_t *);
+LIST_DEF(int64_tList, int64_t *);
+LIST_DEF(uint32_tList, uint32_t *);
+LIST_DEF(constuint32_tList, const uint32_t *);
+LIST_DEF(uint64_tList, uint64_t *);
+LIST_DEF(floatList, float *);
+LIST_DEF(doubleList, double *);
+LIST_DEF(uint8_tList, uint8_t *);
 LIST_DEF(PbZigFieldDescriptorList, const PbZigFieldDescriptor *);
 LIST_DEF(PbZigEnumValueList, const PbZigEnumValue *);
+LIST_DEF(PbZigUnknownFieldList, const PbZigUnknownField *);
 
 typedef void (*PbZigMessageInit)(PbZigMessage *);
 
 typedef enum {
+  LABEL_ERROR,
   LABEL_REQUIRED,
   LABEL_OPTIONAL,
   LABEL_REPEATED,
   LABEL_NONE,
+  // TODO add dummy i32 max value to make sure 32 bit size
 } PbZigLabel;
 
 typedef enum {
@@ -74,14 +87,16 @@ typedef enum {
   TYPE_STRING,
   TYPE_BYTES,
   TYPE_MESSAGE,
+  TYPE_ERROR,
+  // TODO add dummy i32 max value to make sure 32 bit size
 } PbZigType;
 
 typedef enum {
-  FIELD_FLAG_PACKED    = (1 << 0),
-  FIELD_FLAG_DEPRECATED  = (1 << 1),
-  FIELD_FLAG_ONEOF   = (1 << 2),
+  FIELD_FLAG_PACKED = (1 << 0),
+  FIELD_FLAG_DEPRECATED = (1 << 1),
+  FIELD_FLAG_ONEOF = (1 << 2),
+  // TODO add dummy i32 max value to make sure 32 bit size
 } PbZigFieldFlag;
-
 
 struct PbZigMessageDescriptor {
   uint32_t magic;
@@ -94,6 +109,8 @@ struct PbZigMessageDescriptor {
   // const unsigned *fields_sorted_by_name;
   // unsigned n_field_ranges;
   // const PbZigIntRange  *field_ranges;
+  constuint32_tList field_ids;
+  constuint32_tList opt_field_ids;
   PbZigMessageInit message_init;
   void *reserved1;
   void *reserved2;
@@ -113,6 +130,7 @@ struct PbZigFieldDescriptor {
   uint32_t reserved_flags;
   void *reserved2;
   void *reserved3;
+  uint8_t recursive_descriptor;
 };
 
 struct PbZigEnumValue {
@@ -136,16 +154,15 @@ struct PbZigEnumDescriptor {
 
 struct PbZigUnknownField {
   uint32_t tag;
-  size_t len;
-  uint8_t *data;
+  PbZigString data;
 };
 
 struct PbZigMessage {
   const PbZigMessageDescriptor *descriptor;
-  unsigned n_unknown_fields;
-  PbZigUnknownField *unknown_fields;
+  PbZigUnknownFieldList unknown_fields;
+  uint64_t optional_fields_present;
 };
 #define PBZIG_MESSAGE_INIT(descriptor) \
-  { descriptor, 0, NULL }
+  { descriptor, List_empty,  0 }
 
 #endif  // PROTOBUF_ZIG_H

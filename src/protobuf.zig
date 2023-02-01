@@ -18,12 +18,12 @@ const FieldDescriptor = pbtypes.FieldDescriptor;
 const FieldFlag = FieldDescriptor.FieldFlag;
 const FieldDescriptorProto = pb.descr.FieldDescriptorProto;
 const BinaryData = pbtypes.BinaryData;
+const flagsContain = pbtypes.flagsContain;
 const common = pb.common;
 const ptrAlignCast = common.ptrAlignCast;
 const ptrfmt = common.ptrfmt;
 const todo = common.todo;
 const afterLastIndexOf = common.afterLastIndexOf;
-const flagsContain = common.flagsContain;
 const top_level = @This();
 
 pub const LocalError = error{
@@ -115,7 +115,11 @@ pub const Protobuf = struct {
         alloc: Allocator,
 
         pub fn init(data: []const u8, alloc: Allocator) Ctx {
-            return .{ .data = data, .alloc = alloc, .data_start = data };
+            return .{
+                .data = data,
+                .alloc = alloc,
+                .data_start = data,
+            };
         }
 
         pub fn withData(ctx: Ctx, data: []const u8) Ctx {
@@ -215,7 +219,6 @@ pub const Protobuf = struct {
     fn genericMessageInit(desc: *const MessageDescriptor) Message {
         var message = std.mem.zeroes(Message);
         message.descriptor = desc;
-
         for (desc.fields.slice()) |field| {
             std.log.debug(
                 "genericMessageInit field name {s} default {} label {s}",
@@ -251,7 +254,7 @@ pub const Protobuf = struct {
                         std.log.debug("genericMessageInit() string/message ptr {} field.default_value {}", .{ ptrfmt(ptr), ptrfmt(field.default_value) });
                         assert(ptr == field.default_value);
                     },
-                    .TYPE_ERROR, .TYPE_GROUP => unreachable,
+                    else => unreachable,
                 }
             }
         }
@@ -381,7 +384,13 @@ pub const Protobuf = struct {
     ) !void {
         std.log.debug("parseOptionalMember({})", .{ptrfmt(member)});
 
-        parseRequiredMember(scanned_member, member, message, ctx, true) catch |err|
+        parseRequiredMember(
+            scanned_member,
+            member,
+            message,
+            ctx,
+            true,
+        ) catch |err|
             switch (err) {
             error.FieldMissing => return,
             else => return err,
@@ -405,7 +414,13 @@ pub const Protobuf = struct {
             "parseRepeatedMember() field name='{s}' offset=0x{x}/{}",
             .{ field.name, field.offset, field.offset },
         );
-        try parseRequiredMember(scanned_member, member, message, ctx, false);
+        try parseRequiredMember(
+            scanned_member,
+            member,
+            message,
+            ctx,
+            false,
+        );
     }
 
     fn listAppend(
@@ -475,6 +490,7 @@ pub const Protobuf = struct {
                     "parsing message field '{s}' len {} member {}",
                     .{ field.name, scanned_member.data.len, ptrfmt(member) },
                 );
+
                 if (field.descriptor == null) {
                     std.log.err("field.descriptor == null field {}", .{field.*});
                     return error.DescriptorMissing;
@@ -482,7 +498,8 @@ pub const Protobuf = struct {
 
                 var limctx = ctx.withData(scanned_member.data);
                 const field_desc = field.getDescriptor(MessageDescriptor);
-                std.log.debug(
+
+                std.log.info(
                     ".{s} {s} sizeof={}",
                     .{ field.label.tagName(), field_desc.name, field_desc.sizeof_message },
                 );
@@ -499,7 +516,11 @@ pub const Protobuf = struct {
         }
     }
 
-    fn parseMember(scanned_member: ScannedMember, message: *Message, ctx: *Ctx) !void {
+    fn parseMember(
+        scanned_member: ScannedMember,
+        message: *Message,
+        ctx: *Ctx,
+    ) !void {
         const field = scanned_member.field orelse {
             var ufield = try ctx.alloc.create(pbtypes.MessageUnknownField);
             ufield.* = .{
@@ -517,13 +538,13 @@ pub const Protobuf = struct {
         var member = structMemberP(message, field.offset);
         return switch (field.label) {
             .LABEL_REQUIRED => parseRequiredMember(scanned_member, member, message, ctx, true),
-            .LABEL_OPTIONAL, .LABEL_ERROR => if (flagsContain(field.flags, FieldFlag.FLAG_ONEOF))
+            .LABEL_OPTIONAL, .LABEL_ERROR => if (flagsContain(field.flags, .FLAG_ONEOF))
                 parseOneofMember(scanned_member, member, message, ctx)
             else
                 parseOptionalMember(scanned_member, member, message, ctx),
 
             .LABEL_REPEATED => if (scanned_member.key.wire_type == .LEN and
-                (flagsContain(field.flags, FieldFlag.FLAG_PACKED) or isPackableType(field.type)))
+                (flagsContain(field.flags, .FLAG_PACKED) or isPackableType(field.type)))
                 parsePackedRepeatedMember(scanned_member, member, message, ctx)
             else
                 parseRepeatedMember(scanned_member, member, message, ctx),
@@ -543,7 +564,8 @@ pub const Protobuf = struct {
         const show_summary = false;
         var tmpbuf: if (show_summary) [mem.page_size]u8 else void = undefined;
 
-        var last_field: ?*const FieldDescriptor = desc.fields.items[0];
+        const desc_fields = desc.fields.slice();
+        var last_field: ?*const FieldDescriptor = &desc_fields[0];
         var last_field_index: u7 = 0;
         // TODO make this dynamic
         var required_fields_bitmap = std.StaticBitSet(128).initEmpty();
@@ -564,8 +586,8 @@ pub const Protobuf = struct {
             if (desc.message_init) |init| {
                 init(buf.ptr, buf.len);
                 std.log.debug(
-                    "(init) called {s}.initBytes({}, {})",
-                    .{ message.descriptor.?.name, ptrfmt(buf.ptr), buf.len },
+                    "(init) called {s}.init({}) fields.len {}",
+                    .{ message.descriptor.?.name, ptrfmt(message), message.descriptor.?.fields.len },
                 );
             } else {
                 message.* = genericMessageInit(desc);
@@ -593,7 +615,7 @@ pub const Protobuf = struct {
                         "(scan) found field_id={} at index={}",
                         .{ key.field_id, field_index },
                     );
-                    mfield = desc.fields.items[field_index];
+                    mfield = &desc_fields[field_index];
                     last_field = mfield;
                     last_field_index = @intCast(u7, field_index);
                 } else |_| {
@@ -678,7 +700,7 @@ pub const Protobuf = struct {
         }
 
         var missing_any_required = false;
-        for (desc.fields.slice()) |field, i| {
+        for (desc_fields) |field, i| {
             if (field.label == .LABEL_REPEATED) {
                 const size = pb.protobuf.repeatedEleSize(field.type);
                 // list ele type doesn't matter, just want to change len
@@ -729,7 +751,7 @@ pub const Protobuf = struct {
                     }
                     const old = tmpbuf[start..i];
                     const new = buf[start..i];
-                    const descfields = desc.fields.slice();
+                    const descfields = desc_fields.slice();
                     const fieldname = for (descfields) |f, j| {
                         if (f.offset > start) break if (j == 0)
                             "base"

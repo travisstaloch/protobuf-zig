@@ -2,7 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const pb = @import("protobuf");
-const gen = @import("gen.zig");
+const gen = pb.gen;
 pub const CodeGeneratorRequest = pb.plugin.CodeGeneratorRequest;
 
 pub const std_options = struct {

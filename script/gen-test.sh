@@ -15,12 +15,13 @@ for arg in $@; do
   else
     arg=${arg#$inc/} # remove $inc/ prefix
     FILE="$DEST_DIR/${arg%.*}.pb.zig" # replace the extension, add $DEST_DIR prefix
-    CMD="zig test -lc -I$DEST_DIR $FILE --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end -freference-trace=20"
+    CMD="zig test -lc -I$DEST_DIR $FILE --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end -freference-trace"
     echo $CMD
     $($CMD)
-    FILE="$DEST_DIR/${arg%.*}.pb.c" # replace the extension, add $DEST_DIR prefix
-    CMD="zig build-lib -lc -I$DEST_DIR $FILE -femit-bin=/tmp/tmp.a"
-    echo $CMD
-    $($CMD)
+    # build generated c code
+    # FILE="$DEST_DIR/${arg%.*}.pb.c" # replace the extension, add $DEST_DIR prefix
+    # CMD="zig build-lib -lc -I$DEST_DIR $FILE -femit-bin=/tmp/tmp.a"
+    # echo $CMD
+    # $($CMD)
   fi
 done

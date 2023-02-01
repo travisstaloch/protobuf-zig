@@ -1,11 +1,13 @@
 # args should be folders to be generated. usually examples/
-# set -ex
+# usage example: $ script/gen-all.sh -I examples examples/
+
+set -e
 ZIG_FLAGS= #-Dlog-level=info
-zig build $ZIG_FLAGS -freference-trace=20
+zig build $ZIG_FLAGS -freference-trace
 DEST_DIR=gen
 
 # recursively remove all *.pb.zig files from $DEST_DIR
-find $DEST_DIR -name "*.pb.zig" -exec rm {} \;
+#find $DEST_DIR -name "*.pb.zig" -exec rm {} \;
 
 # iterate args, skipping '-I examples'
 state="start"

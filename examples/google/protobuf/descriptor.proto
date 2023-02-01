@@ -142,6 +142,7 @@ message ExtensionRangeOptions {
 // Describes a field within a message.
 message FieldDescriptorProto {
   enum Type {
+    TYPE_ERROR = 0; // added ty travisstaloch
     // 0 is reserved for errors.
     // Order is weird for historical reasons.
     TYPE_DOUBLE = 1;
@@ -175,6 +176,7 @@ message FieldDescriptorProto {
   }
 
   enum Label {
+    LABEL_ERROR = 0; // added ty travisstaloch
     // 0 is reserved for errors
     LABEL_OPTIONAL = 1;
     LABEL_REQUIRED = 2;
