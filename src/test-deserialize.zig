@@ -3,13 +3,16 @@ const mem = std.mem;
 const testing = std.testing;
 
 const pb = @import("protobuf");
-const types = pb.types;
+const pbtypes = pb.types;
 const plugin = pb.plugin;
 const protobuf = pb.protobuf;
 const ptrfmt = pb.common.ptrfmt;
 const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
 const FieldDescriptorProto = pb.descr.FieldDescriptorProto;
-const Key = types.Key;
+const Key = pbtypes.Key;
+const tcommon = @import("test-common.zig");
+const lengthEncode = tcommon.lengthEncode;
+const encodeMessage = tcommon.encodeMessage;
 
 const talloc = testing.allocator;
 // var tarena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -107,31 +110,6 @@ test "examples/only_enum-1 - no deps" {
     try testing.expectEqual(@as(usize, 3), pfscloc.items[6].span.len);
 
     std.log.info("req {}", .{req});
-}
-
-fn encodeMessage(comptime parts: anytype) []const u8 {
-    var result: []const u8 = &.{};
-    const Parts = @TypeOf(parts);
-    comptime {
-        for (std.meta.fields(Parts)) |f| {
-            switch (f.type) {
-                Key => result = result ++ [1]u8{@field(parts, f.name).encode()},
-                comptime_int => result = result ++ [1]u8{@field(parts, f.name)},
-                else => if (std.meta.trait.isZigString(f.type)) {
-                    result = result ++ @field(parts, f.name);
-                } else @compileLog(f.type),
-            }
-        }
-    }
-    return result;
-}
-
-fn lengthEncode(comptime parts: anytype) []const u8 {
-    const m = encodeMessage(parts);
-    var buf: [10]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    try protobuf.writeVarint128(usize, m.len, fbs.writer(), .int);
-    return buf[0..fbs.pos] ++ m;
 }
 
 test "nested lists" {
@@ -262,7 +240,8 @@ test "readme" {
     // person.id = 42;
 }
 
-test "message with map fields" {
+test "message with map fields / nested types" {
+    // this test also exercises nested types
     const req = try deserializeHelper(CodeGeneratorRequest, "examples/map.proto", talloc);
     defer req.base.deinit(talloc);
     try testing.expectEqual(@as(usize, 0), req.base.unknown_fields.len);

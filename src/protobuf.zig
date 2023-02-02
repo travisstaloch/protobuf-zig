@@ -17,7 +17,6 @@ const MessageDescriptor = pbtypes.MessageDescriptor;
 const FieldDescriptor = pbtypes.FieldDescriptor;
 const FieldFlag = FieldDescriptor.FieldFlag;
 const FieldDescriptorProto = pb.descr.FieldDescriptorProto;
-const BinaryData = pbtypes.BinaryData;
 const flagsContain = pbtypes.flagsContain;
 const common = pb.common;
 const ptrAlignCast = common.ptrAlignCast;
@@ -36,17 +35,19 @@ pub const LocalError = error{
     DescriptorMissing,
     InvalidType,
     InvalidData,
+    InvalidMessageType,
 };
 
 pub const Error = std.mem.Allocator.Error ||
     std.fs.File.WriteFileError ||
     LocalError;
 
-// Reads a varint from the reader and returns the value.
-// `mode = .sint` should used for sint32 and sint64 decoding when expecting
-// lots of negative numbers as it uses zig zag encoding to reduce the size of
-// negative values. negatives encoded otherwise (with `mode = .int`). will
-// require extra size (10 bytes each) and are inefficient.
+/// Reads a varint from the reader and returns the value.  `mode = .sint` should
+/// be used when expecting lots of negative numbers as it uses zig zag encoding
+/// to reduce the size of negative values. negatives encoded otherwise (with
+/// `mode = .int`).  will require extra size (10 bytes each) and are
+/// inefficient.
+/// adapted from https://github.com/mlugg/zigpb/blob/main/protobuf.zig#decodeVarInt()
 pub fn readVarint128(comptime T: type, reader: anytype, comptime mode: IntMode) !T {
     var shift: u6 = 0;
     var value: u64 = 0;
@@ -67,14 +68,28 @@ pub fn readVarint128(comptime T: type, reader: anytype, comptime mode: IntMode) 
     };
 }
 
+/// Writes a varint to the writer.
+/// `mode = .sint` should be used when expecting lots of negative values
+/// adapted from https://github.com/mlugg/zigpb/blob/main/protobuf.zig#encodeVarInt()
 pub fn writeVarint128(comptime T: type, _value: T, writer: anytype, comptime mode: IntMode) !void {
     var value = _value;
 
     if (mode == .sint) {
         value = (value >> (@bitSizeOf(T) - 1)) ^ (value << 1);
     }
+    if (value == 0) {
+        try writer.writeByte(0);
+        return;
+    }
     const U = std.meta.Int(.unsigned, @bitSizeOf(T));
-    try std.leb.writeULEB128(writer, @bitCast(U, value));
+    // try std.leb.writeULEB128(writer, @bitCast(U, value));
+    var x = @bitCast(U, value);
+    while (x != 0) {
+        const lopart: u8 = @truncate(u7, x);
+        x >>= 7;
+        const hipart = @as(u8, 0b1000_0000) * @boolToInt(x != 0);
+        try writer.writeByte(hipart | lopart);
+    }
 }
 
 pub const IntMode = enum { sint, int };
@@ -101,13 +116,11 @@ pub fn repeatedEleSize(t: FieldDescriptorProto.Type) u8 {
         .TYPE_DOUBLE,
         => 8,
         .TYPE_BOOL => @sizeOf(bool),
-        .TYPE_STRING => @sizeOf(pb.extern_types.String),
+        .TYPE_STRING, .TYPE_BYTES => @sizeOf(pb.extern_types.String),
         .TYPE_MESSAGE => @sizeOf(*Message),
-        .TYPE_BYTES => @sizeOf(BinaryData),
         .TYPE_ERROR, .TYPE_GROUP => unreachable,
     };
 }
-
 pub const Protobuf = struct {
     const Ctx = struct {
         data: []const u8,
@@ -244,10 +257,10 @@ pub const Protobuf = struct {
                     .TYPE_DOUBLE,
                     => @memcpy(field_bytes, default, 8),
                     .TYPE_BOOL => @memcpy(field_bytes, default, @sizeOf(bool)),
-                    .TYPE_BYTES => @memcpy(field_bytes, default, @sizeOf(BinaryData)),
                     .TYPE_STRING,
-                    .TYPE_MESSAGE,
-                    => { //
+                    .TYPE_BYTES,
+                    => @memcpy(field_bytes, default, @sizeOf(String)),
+                    .TYPE_MESSAGE => { //
                         if (true) @panic("TODO - TYPE_STRING/MESSAGE default_value");
                         mem.writeIntLittle(usize, field_bytes[0..8], @ptrToInt(field.default_value));
                         const ptr = @intToPtr(?*anyopaque, @bitCast(usize, field_bytes[0..8].*));
@@ -538,7 +551,7 @@ pub const Protobuf = struct {
         var member = structMemberP(message, field.offset);
         return switch (field.label) {
             .LABEL_REQUIRED => parseRequiredMember(scanned_member, member, message, ctx, true),
-            .LABEL_OPTIONAL, .LABEL_ERROR => if (flagsContain(field.flags, .FLAG_ONEOF))
+            .LABEL_OPTIONAL, .LABEL_NONE => if (flagsContain(field.flags, .FLAG_ONEOF))
                 parseOneofMember(scanned_member, member, message, ctx)
             else
                 parseOptionalMember(scanned_member, member, message, ctx),
@@ -549,6 +562,25 @@ pub const Protobuf = struct {
             else
                 parseRepeatedMember(scanned_member, member, message, ctx),
         };
+    }
+
+    pub fn messageTypeName(magic: u32) []const u8 {
+        return switch (magic) {
+            pbtypes.MESSAGE_DESCRIPTOR_MAGIC => "message",
+            pbtypes.ENUM_DESCRIPTOR_MAGIC => "enum",
+            pbtypes.SERVICE_DESCRIPTOR_MAGIC => "service",
+            else => "unknown",
+        };
+    }
+
+    pub fn verifyMessageType(magic: u32, expected_magic: u32) Error!void {
+        if (magic != expected_magic) {
+            std.log.err("deserialize() requires a {s} type but got {s}", .{
+                messageTypeName(expected_magic),
+                messageTypeName(magic),
+            });
+            return error.InvalidMessageType;
+        }
     }
 
     pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
@@ -570,7 +602,7 @@ pub const Protobuf = struct {
         // TODO make this dynamic
         var required_fields_bitmap = std.StaticBitSet(128).initEmpty();
         var n_unknown: u32 = 0;
-        assert(desc.magic == pbtypes.MESSAGE_DESCRIPTOR_MAGIC);
+        try verifyMessageType(desc.magic, pbtypes.MESSAGE_DESCRIPTOR_MAGIC);
 
         std.log.info("\n+++ deserialize {s} {}-{}/{} isInit={} size=0x{x}/{} data len {} +++", .{
             desc.name,
@@ -781,6 +813,163 @@ pub const Protobuf = struct {
         return message;
     }
 };
+
+fn serializeErr(comptime fmt: []const u8, args: anytype, err: Error) Error {
+    std.log.err("serialization error: " ++ fmt, args);
+    return err;
+}
+
+fn encodeOptionalField(
+    message: *const Message,
+    field: FieldDescriptor,
+    member: [*]const u8,
+    writer: anytype,
+) Error!void {
+    if (!message.isPresent(field.id)) return;
+    std.log.debug("encodeOptionalField() {s} .{s} .{s}", .{ field.name, field.type.tagName(), field.label.tagName() });
+
+    return encodeRequiredField(message, field, member, writer);
+}
+
+fn encodeRepeatedField(
+    message: *const Message,
+    field: FieldDescriptor,
+    member: [*]const u8,
+    writer: anytype,
+) Error!void {
+    const list = ptrAlignCast(*const List(u8), member);
+    std.log.debug("encodeRepeatedField() .{s} .{s} list.len={}", .{ field.type.tagName(), field.label.tagName(), list.len });
+    if (flagsContain(field.flags, .FLAG_PACKED)) {
+        todo("encodeRepeatedField() packed", .{});
+    } else {
+        const size = repeatedEleSize(field.type);
+        var i: usize = 0;
+        while (i < list.len) : (i += 1) {
+            try encodeRequiredField(message, field, list.items + i * size, writer);
+        }
+    }
+}
+
+fn encodeOneofField(
+    message: *const Message,
+    field: FieldDescriptor,
+    member: [*]const u8,
+    writer: anytype,
+) Error!void {
+    _ = message;
+    _ = member;
+    _ = writer;
+    todo("encodeOneofField() .{s} .{s}", .{ field.type.tagName(), field.label.tagName() });
+}
+
+fn encodeUnlabeledField(
+    message: *const Message,
+    field: FieldDescriptor,
+    member: [*]const u8,
+    writer: anytype,
+) Error!void {
+    _ = message;
+    _ = member;
+    _ = writer;
+    todo("encodeUnlabeledField() .{s} .{s}", .{ field.type.tagName(), field.label.tagName() });
+}
+
+fn encodeRequiredField(
+    message: *const Message,
+    field: FieldDescriptor,
+    member: [*]const u8,
+    writer: anytype,
+) Error!void {
+    _ = message;
+    std.log.debug("encodeRequiredField() .{s} .{s}", .{ field.type.tagName(), field.label.tagName() });
+    switch (field.type) {
+        .TYPE_ENUM, .TYPE_INT32 => {
+            const key = Key.init(.VARINT, field.id);
+            try writeVarint128(usize, key.encode(), writer, .int);
+            const value = mem.readIntLittle(i32, member[0..4]);
+            try writeVarint128(i32, value, writer, .int);
+        },
+        .TYPE_UINT64, .TYPE_INT64 => {
+            const key = Key.init(.VARINT, field.id);
+            try writeVarint128(usize, key.encode(), writer, .int);
+            const value = mem.readIntLittle(u64, member[0..8]);
+            try writeVarint128(u64, value, writer, .int);
+        },
+        .TYPE_DOUBLE => {
+            const key = Key.init(.I64, field.id);
+            try writeVarint128(usize, key.encode(), writer, .int);
+            const value = mem.readIntLittle(u64, member[0..8]);
+            try writeVarint128(u64, value, writer, .int);
+        },
+        .TYPE_FLOAT => {
+            const key = Key.init(.I32, field.id);
+            try writeVarint128(usize, key.encode(), writer, .int);
+            const value = mem.readIntLittle(u32, member[0..4]);
+            try writeVarint128(u32, value, writer, .int);
+        },
+        .TYPE_BOOL => {
+            const key = Key.init(.VARINT, field.id);
+            try writeVarint128(usize, key.encode(), writer, .int);
+            try writer.writeByte(member[0]);
+        },
+        .TYPE_MESSAGE => {
+            var cwriter = std.io.countingWriter(std.io.null_writer);
+            const subm = ptrAlignCast(*const *Message, member);
+            try serialize(subm.*, cwriter.writer());
+            const key = Key.init(.LEN, field.id);
+            try writeVarint128(usize, key.encode(), writer, .int);
+            try writeVarint128(usize, cwriter.bytes_written, writer, .int);
+            try serialize(subm.*, writer);
+        },
+        .TYPE_STRING, .TYPE_BYTES => {
+            const key = Key.init(.LEN, field.id);
+            try writeVarint128(usize, key.encode(), writer, .int);
+            const s = ptrAlignCast(*const String, member);
+            try writeVarint128(usize, s.len, writer, .int);
+            _ = try writer.write(s.slice());
+        },
+        else => todo("encodeRequiredField() field.type .{s}", .{field.type.tagName()}),
+    }
+}
+
+fn encodeUnknownField(
+    message: *const Message,
+    ufield: *const pbtypes.MessageUnknownField,
+    writer: anytype,
+) Error!void {
+    _ = message;
+    _ = writer;
+    todo("encodeUnknownField() .{}", .{ufield.key});
+}
+
+pub fn serialize(message: *const Message, writer: anytype) Error!void {
+    const desc = message.descriptor orelse return serializeErr(
+        "invalid message. missing descriptor",
+        .{},
+        error.DescriptorMissing,
+    );
+    std.log.info("+++ serialize {}", .{desc.name});
+    try Protobuf.verifyMessageType(desc.magic, pbtypes.MESSAGE_DESCRIPTOR_MAGIC);
+    const buf = @ptrCast([*]const u8, message)[0..desc.sizeof_message];
+    for (desc.fields.slice()) |field| {
+        // if (!message.isPresent(field.id)) continue;
+        const member = buf.ptr + field.offset;
+
+        if (field.label == .LABEL_REQUIRED)
+            try encodeRequiredField(message, field, member, writer)
+        else if ((field.label == .LABEL_OPTIONAL or field.label == .LABEL_NONE) and
+            flagsContain(field.flags, .FLAG_ONEOF))
+            try encodeOneofField(message, field, member, writer)
+        else if (field.label == .LABEL_OPTIONAL)
+            try encodeOptionalField(message, field, member, writer)
+        else if (field.label == .LABEL_NONE)
+            try encodeUnlabeledField(message, field, member, writer)
+        else
+            try encodeRepeatedField(message, field, member, writer);
+    }
+    for (message.unknown_fields.slice()) |ufield|
+        try encodeUnknownField(message, ufield, writer);
+}
 
 fn debugit(m: *Message, comptime T: type) void {
     const it = @ptrCast(*T, m);

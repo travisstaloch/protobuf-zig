@@ -16,7 +16,7 @@ pub const FieldDescriptorProto = extern struct {
     base: Message,
     name: String = String.initEmpty(),
     number: i32 = 0,
-    label: Label = .LABEL_ERROR,
+    label: Label = .LABEL_NONE,
     type: Type = .TYPE_ERROR,
     type_name: String = String.initEmpty(),
     extendee: String = String.initEmpty(),
@@ -67,7 +67,7 @@ pub const FieldDescriptorProto = extern struct {
     };
 
     pub const Label = enum(u32) { // use u32 to match c size
-        LABEL_ERROR = 0,
+        LABEL_NONE = 0,
         LABEL_OPTIONAL = 1,
         LABEL_REQUIRED = 2,
         LABEL_REPEATED = 3,
@@ -209,7 +209,7 @@ pub const FieldOptions = extern struct {
     pub const deprecated__default_value = @as(c_int, 0);
     pub const weak__default_value = @as(c_int, 0);
 
-    const CType = enum(u8) {
+    pub const CType = enum(i32) {
         // Default mode.
         STRING = 0,
         CORD = 1,
@@ -219,7 +219,7 @@ pub const FieldOptions = extern struct {
         pub usingnamespace EnumMixins(@This());
     };
 
-    const JSType = enum(u8) {
+    const JSType = enum(i32) {
         // Use the default type.
         JS_NORMAL = 0,
 
@@ -324,7 +324,7 @@ pub const UninterpretedOption = extern struct {
     positive_int_value: u64 = 0,
     negative_int_value: i64 = 0,
     double_value: f64 = 0,
-    string_value: *BinaryData = undefined,
+    string_value: String = String.initEmpty(),
     aggregate_value: String = String.initEmpty(),
 
     pub const field_ids = [_]c_uint{ 2, 3, 4, 5, 6, 7, 8 };
@@ -1066,7 +1066,7 @@ pub const FileOptions = extern struct {
     pub const opt_field_ids = [_]c_uint{ 1, 8, 10, 20, 27, 9, 11, 16, 17, 18, 42, 23, 31, 36, 37, 39, 40, 41, 44, 45 };
     pub usingnamespace MessageMixins(@This());
 
-    pub const OptimizeMode = enum(u8) {
+    pub const OptimizeMode = enum(i32) {
         NONE = 0,
         SPEED = 1,
         CODE_SIZE = 2,
@@ -1463,7 +1463,7 @@ pub const MethodOptions = extern struct {
     pub const opt_field_ids = [_]c_uint{ 33, 34 };
     pub usingnamespace MessageMixins(@This());
 
-    pub const IdempotencyLevel = enum(u8) {
+    pub const IdempotencyLevel = enum(i32) {
         IDEMPOTENCY_UNKNOWN,
         NO_SIDE_EFFECTS,
         IDEMPOTENT,

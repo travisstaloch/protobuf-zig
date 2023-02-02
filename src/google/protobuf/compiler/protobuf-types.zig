@@ -83,6 +83,18 @@ fn IsPresentField(comptime T: type) fn (T, comptime std.meta.FieldEnum(T)) bool 
     }.isPresentField;
 }
 
+fn SetField(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T), anytype) void {
+    return struct {
+        const FieldEnum = std.meta.FieldEnum(T);
+        pub fn setField(self: *T, comptime field_enum: std.meta.FieldEnum(T), value: anytype) void {
+            self.setPresentField(field_enum);
+            const tagname = @tagName(field_enum);
+            std.log.debug("setField() .{s}={}", .{ tagname, value });
+            @field(self, tagname) = value;
+        }
+    }.setField;
+}
+
 const WriteErr = std.fs.File.WriteError;
 pub fn FormatFn(comptime T: type) type {
     return fn (T, comptime []const u8, std.fmt.FormatOptions, anytype) WriteErr!void;
@@ -134,6 +146,7 @@ pub const reserved_words = std.ComptimeStringMap(void, .{
     .{ "isPresentField", {} },
     .{ "descriptor", {} },
     .{ "field_descriptors", {} },
+    .{ "set", {} },
 });
 
 pub fn MessageMixins(comptime Self: type) type {
@@ -146,6 +159,7 @@ pub fn MessageMixins(comptime Self: type) type {
         pub const setPresentField = SetPresentField(Self);
         // TODO rename isPresentField() => has()
         pub const isPresentField = IsPresentField(Self);
+        pub const set = SetField(Self);
     };
 }
 
@@ -656,10 +670,10 @@ pub const Message = extern struct {
 //     destroy: ?*const fn ([*c]Service) callconv(.C) void,
 // };
 
-pub const BinaryData = extern struct {
-    len: usize = 0,
-    data: String = String.initEmpty(),
-};
+// pub const BinaryData = extern struct {
+//     len: usize = 0,
+//     data: String = String.initEmpty(),
+// };
 
 // pub const Buffer = extern struct {
 //     append: ?*const fn ([*c]Buffer, usize, [*c]const u8) callconv(.C) void,
