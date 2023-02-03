@@ -8,8 +8,7 @@ test {
 test "readme" {
     // Note - the package 'protobuf' below is src/lib.zig.  this package must
     // include itself. i hope to remove this requirement soon.  it can be
-    // provided in [build.zig](build.zig) or on the command line:
-    //   $ zig test test.protobuf.zig --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end --pkg-end
+    // provided in build.zig or on the command line:
     const std = @import("std");
     const pb = @import("protobuf");
     const Person = @import("../examples/gen/only_message.pb.zig").Person;

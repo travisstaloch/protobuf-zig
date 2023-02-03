@@ -7,34 +7,35 @@ A tool for generating zig code capable of de/serializing to the protocol buffer 
 - [x] initial code generation
 - [x] initial deserialization from wire format
 - [x] initial serialization to wire format
-
-# Todo
-- [ ] parse text format - this could make for nice readable tests cases
-- [ ] output text format
-- [ ] maybe parse json?
-- [ ] output json
-- [ ] conformance testing?
-- [ ] support more protoc args?
-  - [ ] --encode=MESSAGE_TYPE
-  - [ ] --decode=MESSAGE_TYPE
-  - [ ] --decode_raw
-  - [ ] --descriptor_set_in=FILES
-  - [ ] -oFILE / --descriptor_set_out=FILE
+- [ ] recursive message types don't work yet [#1](../../issues/1). see [examples/recursive.proto](examples/recursive.proto)
 
 # Usage
-Run tests
+
+First, install the `protoc` compiler on your system.  
+
+* on linux systems with apt:
+```console
+sudo apt install protobuf-compiler
+```
+* otherwise: [protoc](https://developers.google.com/protocol-buffers/docs/downloads)
+
+Once you have `protoc` in your PATH
+
+### Build
+```console
+zig build
+```
+
+### Run tests. 
+note: some of these depend on `protoc` being available.
 ```console
 zig build test
 ```
 
-Build
+### Generate .zig files from .proto files
 ```console
 zig build
-```
-
-```console
-zig build
-zig-out/bin/protoc-zig --zig_out=gen/ -I examples/ examples/only_message.proto
+zig-out/bin/protoc-zig --zig_out=gen/ -I examples/ examples/only_message.proto examples/only_enum.proto
 ```
 
 This generates the following files in gen/:
@@ -43,14 +44,14 @@ only_message.pb.zig
 only_enum.pb.zig
 ```
 
-In your zig application:
+### Use the generated code
+  * see below for an example `zig test` command
+  * see [build.zig](build.zig) for a packaging example
 ```zig
-// zig test src/tests.zig --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end --pkg-end --main-pkg-path .
 test "readme" {
     // Note - the package 'protobuf' below is src/lib.zig.  this package must
     // include itself. i hope to remove this requirement soon.  it can be
-    // provided in [build.zig](build.zig) or on the command line:
-    //   $ zig test test.protobuf.zig --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end --pkg-end
+    // provided in build.zig or on the command line:
     const std = @import("std");
     const pb = @import("protobuf");
     const Person = @import("../examples/gen/only_message.pb.zig").Person;
@@ -79,7 +80,10 @@ test "readme" {
     try std.testing.expect(person_copy.has(.kind));
     try std.testing.expectEqual(person.kind, person_copy.kind);
 }
+```
 
+```console
+$ zig test src/tests.zig --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end --pkg-end --main-pkg-path .
 ```
 
 # Resources

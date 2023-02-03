@@ -1,0 +1,12 @@
+# Todo
+- [ ] parse text format - this could make for nice readable tests cases
+- [ ] output text format
+- [ ] maybe parse json?
+- [ ] output json
+- [ ] conformance testing?
+- [ ] support more protoc args?
+  - [ ] --encode=MESSAGE_TYPE
+  - [ ] --decode=MESSAGE_TYPE
+  - [ ] --decode_raw
+  - [ ] --descriptor_set_in=FILES
+  - [ ] -oFILE / --descriptor_set_out=FILE
