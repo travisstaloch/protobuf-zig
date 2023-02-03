@@ -223,23 +223,6 @@ test "message missing required fields" {
     try testing.expectError(error.RequiredFieldMissing, req);
 }
 
-// test.protobuf.zig
-test "readme" {
-    if (true) return error.SkipZigTest;
-    // // Note - this file depends on packages 'protobuf' and 'protobuf-types'
-    // // these can be provided in build.zig or on the command line line this:
-    // // $ zig test test.protobuf.zig --pkg-begin protobuf-types src/types.zig --pkg-end --pkg-begin protobuf src/protobuf.zig --pkg-end
-    // const protobuf = @import("protobuf"); // src/protobuf.zig
-    // const Person = @import("../gen/only_message.pb.zig").Person;
-
-    // const bytes = ""; // should be protobuf wire format bytes
-    // const alloc = std.heap.page_allocator; // any zig std.mem.Allocator
-    // var ctx = protobuf.context(bytes, alloc);
-    // const person_message = try ctx.deserialize(&Person.descriptor);
-    // var person = try person_message.as(Person);
-    // person.id = 42;
-}
-
 test "message with map fields / nested types" {
     // this test also exercises nested types
     const req = try deserializeHelper(CodeGeneratorRequest, "examples/map.proto", talloc);

@@ -47,50 +47,51 @@ fn Init(comptime T: type) fn () T {
     }.init;
 }
 
-fn SetPresentField(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T)) void {
+fn SetPresent(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T)) void {
     return struct {
         const FieldEnum = std.meta.FieldEnum(T);
-        pub fn setPresentField(self: *T, comptime field_enum: std.meta.FieldEnum(T)) void {
+        pub fn setPresent(self: *T, comptime field_enum: std.meta.FieldEnum(T)) void {
             const tagname = @tagName(field_enum);
             const name = T.descriptor.name;
             if (comptime mem.eql(u8, "base", tagname))
-                compileErr("{s}.setPresentField() field_enum == .base", .{name});
+                compileErr("{s}.setPresent() field_enum == .base", .{name});
             const field_idx = std.meta.fieldIndex(T, tagname) orelse
-                compileErr("{s}.setPresentField() invalid field name {s}", .{ name, tagname });
-            std.log.debug("setPresentField() {s}.{s}:{}", .{ name, @tagName(field_enum), field_idx });
+                compileErr("{s}.setPresent() invalid field name {s}", .{ name, tagname });
+            std.log.debug("setPresent() {s}.{s}:{}", .{ name, @tagName(field_enum), field_idx });
             self.base.setPresentFieldIndex(field_idx - 1);
         }
-    }.setPresentField;
+    }.setPresent;
 }
 
-fn IsPresentField(comptime T: type) fn (T, comptime std.meta.FieldEnum(T)) bool {
+fn Has(comptime T: type) fn (T, comptime std.meta.FieldEnum(T)) bool {
     return struct {
         const FieldEnum = std.meta.FieldEnum(T);
-        pub fn isPresentField(self: T, comptime field_enum: std.meta.FieldEnum(T)) bool {
+        pub fn has(self: T, comptime field_enum: std.meta.FieldEnum(T)) bool {
             const tagname = @tagName(field_enum);
             const name = T.descriptor.name.slice();
             if (comptime mem.eql(u8, "base", tagname))
-                compileErr("{s}.isPresentField() field_enum == .base", .{name});
+                compileErr("{s}.Has() field_enum == .base", .{name});
             const field_idx = std.meta.fieldIndex(T, tagname) orelse
-                compileErr("{s}.isPresentField() invalid field name {s}", .{ name, tagname });
+                compileErr("{s}.Has() invalid field name {s}", .{ name, tagname });
             const field_id = T.field_ids[field_idx - 1];
             std.log.debug(
-                "isPresentField() {s}.{s}:{} field_id {} isPresent()={}",
-                .{ name, @tagName(field_enum), field_idx, field_id, self.base.isPresent(field_id) },
+                "Has() {s}.{s}:{} field_id {} hasFieldId()={}",
+                .{ name, @tagName(field_enum), field_idx, field_id, self.base.hasFieldId(field_id) },
             );
-            return self.base.isPresent(field_id);
+            return self.base.hasFieldId(field_id);
         }
-    }.isPresentField;
+    }.has;
 }
 
 fn SetField(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T), anytype) void {
     return struct {
         const FieldEnum = std.meta.FieldEnum(T);
         pub fn setField(self: *T, comptime field_enum: std.meta.FieldEnum(T), value: anytype) void {
-            self.setPresentField(field_enum);
+            self.setPresent(field_enum);
             const tagname = @tagName(field_enum);
             std.log.debug("setField() .{s}={}", .{ tagname, value });
-            @field(self, tagname) = value;
+            const F = std.meta.fieldInfo(T, field_enum).type;
+            @field(self, tagname) = @as(F, value);
         }
     }.setField;
 }
@@ -142,8 +143,8 @@ pub const reserved_words = std.ComptimeStringMap(void, .{
     .{ "init", {} },
     .{ "initBytes", {} },
     .{ "format", {} },
-    .{ "setPresentField", {} },
-    .{ "isPresentField", {} },
+    .{ "setPresent", {} },
+    .{ "has", {} },
     .{ "descriptor", {} },
     .{ "field_descriptors", {} },
     .{ "set", {} },
@@ -155,10 +156,8 @@ pub fn MessageMixins(comptime Self: type) type {
         pub const initBytes = InitBytes(Self);
         pub const format = Format(Self);
         pub const descriptor = MessageDescriptor.init(Self);
-        // TODO rename setPresentField() => setPresent()
-        pub const setPresentField = SetPresentField(Self);
-        // TODO rename isPresentField() => has()
-        pub const isPresentField = IsPresentField(Self);
+        pub const setPresent = SetPresent(Self);
+        pub const has = Has(Self);
         pub const set = SetField(Self);
     };
 }
@@ -419,9 +418,11 @@ pub const Message = extern struct {
     comptime {
         assert(@sizeOf(Message) == 40);
     }
+
     pub fn isInit(m: Message) bool {
         return m.descriptor != null;
     }
+
     pub fn init(descriptor: *const MessageDescriptor) Message {
         return .{
             .descriptor = descriptor,
@@ -430,15 +431,15 @@ pub const Message = extern struct {
 
     /// returns true when `field_id` is non-optional
     /// otherwise checks `field_id` is in `m.opt_field_ids`
-    pub fn isPresent(m: *const Message, field_id: c_uint) bool {
+    pub fn hasFieldId(m: *const Message, field_id: c_uint) bool {
         const desc = m.descriptor orelse unreachable;
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse
             return true;
         return (m.optional_fields_present >> @intCast(u6, opt_field_idx)) & 1 != 0;
     }
 
-    /// mark `m.optional_fields_present` at the field index corresponding to
-    /// if `field_id` is a non optional field
+    /// set `m.optional_fields_present` at the field index corresponding to
+    /// `field_id` if `field_id` is a non optional field
     pub fn setPresent(m: *Message, field_id: c_uint) void {
         const desc = m.descriptor orelse
             @panic("called setPresent() on a message with no descriptor.");
@@ -449,6 +450,8 @@ pub const Message = extern struct {
         // TODO if oneof field, remove other fields w/ same oneof_index
     }
 
+    /// if `field_index` is an optional field, set `m.optional_fields_present`
+    /// at `field_index`
     pub fn setPresentFieldIndex(m: *Message, field_index: usize) void {
         const desc = m.descriptor orelse
             @panic("called setPresentFieldIndex() on a message with no descriptor.");
@@ -475,7 +478,7 @@ pub const Message = extern struct {
             const field_id = desc.field_ids.items[i];
             // skip if optional field and not present
             const field_name = f.name.slice();
-            if (message.isPresent(field_id)) {
+            if (message.hasFieldId(field_id)) {
                 switch (f.type) {
                     .TYPE_MESSAGE => {
                         if (f.label == .LABEL_REPEATED) {
@@ -557,7 +560,7 @@ pub const Message = extern struct {
             if (mode == .only_pointer_fields and !isPointerField(field))
                 continue;
             if (flagsContain(field.flags, .FLAG_ONEOF) and
-                !m.isPresent(field.id))
+                !m.hasFieldId(field.id))
             {
                 continue;
             }
@@ -606,7 +609,7 @@ pub const Message = extern struct {
                     }
                 }
             } else if (field.type == .TYPE_MESSAGE) {
-                if (m.isPresent(field.id)) {
+                if (m.hasFieldId(field.id)) {
                     std.log.debug(
                         "deinit {s}.{s} single message field",
                         .{ desc.name, field.name },

@@ -54,6 +54,8 @@ pub fn build(b: *std.build.Builder) void {
     const main_tests = b.addTest("src/tests.zig");
     main_tests.setBuildMode(mode);
     main_tests.addPackage(protobuf_pkg);
+    // allow readme test to import from examples/gen
+    main_tests.main_pkg_path = ".";
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);

@@ -7,12 +7,7 @@ const protobuf = pb.protobuf;
 pub fn encodeInt(comptime T: type, i: T) []const u8 {
     var buf: [32]u8 = undefined; // handles upto u512
     var fbs = std.io.fixedBufferStream(&buf);
-    protobuf.writeVarint128(
-        T,
-        i,
-        fbs.writer(),
-        .int,
-    ) catch unreachable;
+    protobuf.writeVarint128(T, i, fbs.writer(), .int) catch unreachable;
     return fbs.getWritten();
 }
 

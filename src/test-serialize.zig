@@ -22,13 +22,13 @@ test "basic serialization" {
     var data = pb.descr.FieldOptions.init();
     data.set(.ctype, .STRING);
     data.set(.lazy, true);
-    data.setPresentField(.uninterpreted_option);
     var ui = pb.descr.UninterpretedOption.init();
     ui.set(.identifier_value, String.init("ident"));
     ui.set(.positive_int_value, 42);
     ui.set(.negative_int_value, -42);
     ui.set(.double_value, 42);
     try data.uninterpreted_option.append(talloc, &ui);
+    data.setPresent(.uninterpreted_option);
     defer data.uninterpreted_option.deinit(talloc);
     var buf = std.ArrayList(u8).init(talloc);
     defer buf.deinit();

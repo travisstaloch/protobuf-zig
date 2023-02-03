@@ -6,7 +6,7 @@ A tool for generating zig code capable of de/serializing to the protocol buffer 
 # Status
 - [x] initial code generation
 - [x] initial deserialization from wire format
-- [ ] serialization to wire format
+- [x] initial serialization to wire format
 
 # Todo
 - [ ] parse text format - this could make for nice readable tests cases
@@ -45,20 +45,39 @@ only_enum.pb.zig
 
 In your zig application:
 ```zig
-// test.protobuf.zig
-test {
-    // Note - this file depends on packages 'protobuf' and 'protobuf-types'
-    // these can be provided in build.zig or on the command line line this:
-    // $ zig test test.protobuf.zig --pkg-begin protobuf-types src/types.zig --pkg-end --pkg-begin protobuf src/protobuf.zig --pkg-end
-    const protobuf = @import("protobuf"); // src/protobuf.zig
-    const Person = @import("../gen/only_message.pb.zig").Person;
+// zig test src/tests.zig --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end --pkg-end --main-pkg-path .
+test "readme" {
+    // Note - the package 'protobuf' below is src/lib.zig.  this package must
+    // include itself. i hope to remove this requirement soon.  it can be
+    // provided in [build.zig](build.zig) or on the command line:
+    //   $ zig test test.protobuf.zig --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end --pkg-end
+    const std = @import("std");
+    const pb = @import("protobuf");
+    const Person = @import("../examples/gen/only_message.pb.zig").Person;
 
-    const bytes = ""; // should be protobuf wire format bytes
-    const alloc = std.heap.page_allocator; // any zig std.mem.Allocator
-    var ctx = protobuf.context(bytes, alloc);
-    const person_message = try ctx.deserialize(&Person.descriptor);
-    var person = try person_message.as(Person);
-    person.id = 42;
+    // serialize to a writer
+    const alloc = std.testing.allocator; // could be any zig std.mem.Allocator
+    var person = Person.init();
+    person.set(.id, 42);
+    person.set(.name, pb.extern_types.String.init("zero"));
+    person.set(.kind, .NONE);
+    var buf = std.ArrayList(u8).init(alloc);
+    defer buf.deinit();
+    try pb.protobuf.serialize(&person.base, buf.writer());
+
+    // deserialize from a buffer
+    var ctx = pb.protobuf.context(buf.items, alloc);
+    const message = try ctx.deserialize(&Person.descriptor);
+    defer message.deinit(alloc);
+    var person_copy = try message.as(Person);
+
+    // test that they're equal
+    try std.testing.expect(person_copy.has(.id));
+    try std.testing.expectEqual(person.id, person_copy.id);
+    try std.testing.expect(person_copy.has(.name));
+    try std.testing.expectEqualStrings(person.name.slice(), person_copy.name.slice());
+    try std.testing.expect(person_copy.has(.kind));
+    try std.testing.expectEqual(person.kind, person_copy.kind);
 }
 
 ```
@@ -66,3 +85,4 @@ test {
 # Resources
 ### inspired by
 * https://github.com/protobuf-c/protobuf-c
+* https://github.com/mlugg/zigpb

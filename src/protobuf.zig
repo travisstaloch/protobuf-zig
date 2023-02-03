@@ -824,7 +824,7 @@ fn encodeOptionalField(
     member: [*]const u8,
     writer: anytype,
 ) Error!void {
-    if (!message.isPresent(field.id)) return;
+    if (!message.hasFieldId(field.id)) return;
     std.log.debug("encodeOptionalField() {s} .{s} .{s}", .{ field.name, field.type.tagName(), field.label.tagName() });
 
     return encodeRequiredField(message, field, member, writer);
@@ -951,7 +951,6 @@ pub fn serialize(message: *const Message, writer: anytype) Error!void {
     try verifyMessageType(desc.magic, pbtypes.MESSAGE_DESCRIPTOR_MAGIC);
     const buf = @ptrCast([*]const u8, message)[0..desc.sizeof_message];
     for (desc.fields.slice()) |field| {
-        // if (!message.isPresent(field.id)) continue;
         const member = buf.ptr + field.offset;
 
         if (field.label == .LABEL_REQUIRED)
