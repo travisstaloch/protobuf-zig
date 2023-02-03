@@ -7,7 +7,7 @@ zig build $ZIG_FLAGS -freference-trace
 DEST_DIR=gen
 
 # recursively remove all *.pb.zig files from $DEST_DIR
-#find $DEST_DIR -name "*.pb.zig" -exec rm {} \;
+find $DEST_DIR -name "*.pb.zig" -exec rm {} \;
 
 # iterate args, skipping '-I examples'
 state="start"

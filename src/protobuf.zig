@@ -94,8 +94,8 @@ pub fn writeVarint128(comptime T: type, _value: T, writer: anytype, comptime mod
 
 pub const IntMode = enum { sint, int };
 
-pub fn context(data: []const u8, alloc: Allocator) Ctx {
-    return Ctx.init(data, alloc);
+pub fn context(data: []const u8, allocator: Allocator) Ctx {
+    return Ctx.init(data, allocator);
 }
 
 pub fn repeatedEleSize(t: FieldDescriptorProto.Type) u8 {
@@ -125,12 +125,12 @@ pub fn repeatedEleSize(t: FieldDescriptorProto.Type) u8 {
 const Ctx = struct {
     data: []const u8,
     data_start: []const u8,
-    alloc: Allocator,
+    allocator: Allocator,
 
-    pub fn init(data: []const u8, alloc: Allocator) Ctx {
+    pub fn init(data: []const u8, allocator: Allocator) Ctx {
         return .{
             .data = data,
-            .alloc = alloc,
+            .allocator = allocator,
             .data_start = data,
         };
     }
@@ -377,13 +377,6 @@ fn parseOneofMember(
     _ = message;
     _ = ctx;
     const field = scanned_member.field orelse unreachable;
-    // size_t *p_n = structMemberPtr(size_t, message, field.quantifier_offset);
-    // size_t siz = repeatedEleSize(field.type);
-    // void *array = *(char **) member + siz * (*p_n);
-    // const uint8_t *at = scanned_member.data + scanned_member.prefix_len;
-    // size_t rem = scanned_member.len - scanned_member.prefix_len;
-    // size_t count = 0;
-
     switch (field.type) {
         else => todo("{s}", .{@tagName(field.type)}),
     }
@@ -484,7 +477,7 @@ fn parseRequiredMember(
         .TYPE_STRING => {
             if (wire_type != .LEN) return error.FieldMissing;
 
-            const bytes = try ctx.alloc.dupe(u8, scanned_member.data);
+            const bytes = try ctx.allocator.dupe(u8, scanned_member.data);
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(String), String.init(bytes));
             } else {
@@ -535,10 +528,10 @@ fn parseMember(
     ctx: *Ctx,
 ) !void {
     const field = scanned_member.field orelse {
-        var ufield = try ctx.alloc.create(pbtypes.MessageUnknownField);
+        var ufield = try ctx.allocator.create(pbtypes.MessageUnknownField);
         ufield.* = .{
             .key = scanned_member.key,
-            .data = String.init(try ctx.alloc.dupe(u8, scanned_member.data)),
+            .data = String.init(try ctx.allocator.dupe(u8, scanned_member.data)),
         };
         message.unknown_fields.appendAssumeCapacity(ufield);
         return;
@@ -564,7 +557,7 @@ fn parseMember(
     };
 }
 
-pub fn messageTypeName(magic: u32) []const u8 {
+fn messageTypeName(magic: u32) []const u8 {
     return switch (magic) {
         pbtypes.MESSAGE_DESCRIPTOR_MAGIC => "message",
         pbtypes.ENUM_DESCRIPTOR_MAGIC => "enum",
@@ -573,7 +566,7 @@ pub fn messageTypeName(magic: u32) []const u8 {
     };
 }
 
-pub fn verifyMessageType(magic: u32, expected_magic: u32) Error!void {
+fn verifyMessageType(magic: u32, expected_magic: u32) Error!void {
     if (magic != expected_magic) {
         std.log.err("deserialize() requires a {s} type but got {s}", .{
             messageTypeName(expected_magic),
@@ -583,54 +576,57 @@ pub fn verifyMessageType(magic: u32, expected_magic: u32) Error!void {
     }
 }
 
+fn deserializeErr(comptime fmt: []const u8, args: anytype, err: Error) Error {
+    std.log.err("deserialization error: " ++ fmt, args);
+    return err;
+}
+
+/// create a new Message and deserialize a protobuf wire format message from
+/// ctx.data into its fields. uses ctx.allocator for allocations.
 pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
-    var buf = try ctx.alloc.alignedAlloc(
+    var buf = try ctx.allocator.alignedAlloc(
         u8,
         common.ptrAlign(*Message),
         desc.sizeof_message,
     );
     var message = ptrAlignCast(*Message, buf.ptr);
-    errdefer message.deinit(ctx.alloc);
-    message.descriptor = null; // make sure uninit
-
-    const show_summary = false;
-    var tmpbuf: if (show_summary) [mem.page_size]u8 else void = undefined;
+    errdefer message.deinit(ctx.allocator);
 
     const desc_fields = desc.fields.slice();
     var last_field: ?*const FieldDescriptor = &desc_fields[0];
     var last_field_index: u7 = 0;
-    // TODO make this dynamic
+    // TODO make this dynamic to allow for larger structs
     var required_fields_bitmap = std.StaticBitSet(128).initEmpty();
     var n_unknown: u32 = 0;
     try verifyMessageType(desc.magic, pbtypes.MESSAGE_DESCRIPTOR_MAGIC);
 
-    std.log.info("\n+++ deserialize {s} {}-{}/{} isInit={} size=0x{x}/{} data len {} +++", .{
+    std.log.info("\n+++ deserialize {s} {}-{}/{} size=0x{x}/{} data len {} +++", .{
         desc.name,
         ptrfmt(buf.ptr),
         ptrfmt(buf.ptr + buf.len),
         buf.len,
-        message.isInit(),
         desc.sizeof_message,
         desc.sizeof_message,
         ctx.data.len,
     });
-    if (!message.isInit()) {
-        if (desc.message_init) |init| {
-            init(buf.ptr, buf.len);
-            std.log.debug(
-                "(init) called {s}.init({}) fields.len {}",
-                .{ message.descriptor.?.name, ptrfmt(message), message.descriptor.?.fields.len },
-            );
-        } else {
-            message.* = genericMessageInit(desc);
-        }
-    }
 
-    if (show_summary) mem.copy(u8, &tmpbuf, buf);
-    var sfa = std.heap.stackFallback(@sizeOf(ScannedMember) * 16, ctx.alloc);
+    if (desc.message_init) |init| {
+        init(buf.ptr, buf.len);
+        std.log.debug(
+            "(init) called {s}.init({}) fields.len {}",
+            .{ message.descriptor.?.name, ptrfmt(message), message.descriptor.?.fields.len },
+        );
+    } else message.* = genericMessageInit(desc);
+
+    // ---
+    // pre-scan the wire message saving to scanned_members in order to find out
+    // how long repeated fields are before allocating them.
+    // ---
+    var sfa = std.heap.stackFallback(@sizeOf(ScannedMember) * 16, ctx.allocator);
     const sfalloc = sfa.get();
     var scanned_members: std.ArrayListUnmanaged(ScannedMember) = .{};
     defer scanned_members.deinit(sfalloc);
+
     while (true) {
         const key = ctx.readKey() catch |e| switch (e) {
             error.EndOfStream => break,
@@ -675,21 +671,21 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
             },
             .I64 => {
                 if (ctx.data.len < 8) {
-                    std.log.err(
+                    return deserializeErr(
                         "too short after 64 bit wiretype at offset {}",
                         .{ctx.bytesRead()},
+                        error.InvalidData,
                     );
-                    return error.InvalidData;
                 }
                 sm.data.len = 8;
             },
             .I32 => {
                 if (ctx.data.len < 4) {
-                    std.log.err(
+                    return deserializeErr(
                         "too short after 32 bit wiretype at offset {}",
                         .{ctx.bytesRead()},
+                        error.InvalidData,
                     );
-                    return error.InvalidData;
                 }
                 sm.data.len = 4;
             },
@@ -701,11 +697,11 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                 ctx.skip(sm.data.len);
             },
             else => {
-                std.log.err("unsupported tag .{s} at offset {}", .{
-                    @tagName(key.wire_type),
-                    ctx.bytesRead(),
-                });
-                return error.InvalidType;
+                return deserializeErr(
+                    "unsupported tag .{s} at offset {}",
+                    .{ @tagName(key.wire_type), ctx.bytesRead() },
+                    error.InvalidType,
+                );
             },
         }
 
@@ -731,6 +727,10 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
         try scanned_members.append(sfalloc, sm);
     }
 
+    // --
+    // post-scan. allocate repeated field lists and unknown fields now that all
+    // lengths are known.
+    // --
     var missing_any_required = false;
     for (desc_fields) |field, i| {
         if (field.label == .LABEL_REPEATED) {
@@ -742,8 +742,8 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                     "(scan) field '{s}' - allocating {}={}*{} list bytes",
                     .{ field.name, size * list.len, size, list.len },
                 );
-                // TODO CLEAR_REMAINING_N_PTRS
-                var bytes = try ctx.alloc.alloc(u8, size * list.len);
+                // TODO CLEAR_REMAINING_N_PTRS?
+                var bytes = try ctx.allocator.alloc(u8, size * list.len);
                 list.items = bytes.ptr;
                 list.cap = list.len;
                 list.len = 0;
@@ -760,53 +760,22 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
             }
         }
     }
+
     if (missing_any_required) return error.RequiredFieldMissing;
     assert(ctx.data.len == 0);
 
     if (n_unknown > 0)
-        try message.unknown_fields.ensureTotalCapacity(ctx.alloc, n_unknown);
+        try message.unknown_fields.ensureTotalCapacity(ctx.allocator, n_unknown);
 
     for (scanned_members.items) |sm|
         try parseMember(sm, message, ctx);
 
     assert(message.unknown_fields.len == message.unknown_fields.cap);
 
-    if (show_summary) {
-        std.log.info("\n   --- summary for {s} ---", .{desc.name});
-        var i: usize = 0;
-        var last_start: usize = 0;
-        while (i + 8 < buf.len) : (i += 8) {
-            if (!mem.eql(u8, tmpbuf[i..][0..8], buf[i..][0..8])) {
-                const start = i;
-                while (i < buf.len) : (i += 8) {
-                    if (mem.eql(u8, tmpbuf[i..][0..8], buf[i..][0..8])) break;
-                }
-                const old = tmpbuf[start..i];
-                const new = buf[start..i];
-                const descfields = desc_fields.slice();
-                const fieldname = for (descfields) |f, j| {
-                    if (f.offset > start) break if (j == 0)
-                        "base"
-                    else
-                        descfields[j -| 1].name.slice();
-                } else descfields[descfields.len - 1].name.slice();
-                std.log.info("{s} - difference at {s}:0x{x}/{}\nold {any}\nnew{any}", .{
-                    desc.name,
-                    fieldname,
-                    start,
-                    start,
-                    ptrAlignCast([*]*u8, old.ptr)[0 .. old.len / 8],
-                    ptrAlignCast([*]*u8, new.ptr)[0 .. new.len / 8],
-                });
-                last_start = start;
-            }
-        }
-    }
-    std.log.info("\n--- deserialize {s} {}-{} isInit={} size=0x{x}/{} ---", .{
+    std.log.info("\n--- deserialize {s} {}-{} size=0x{x}/{} ---", .{
         desc.name,
         ptrfmt(buf.ptr),
         ptrfmt(buf.ptr + buf.len),
-        message.isInit(),
         desc.sizeof_message,
         desc.sizeof_message,
     });
@@ -825,7 +794,10 @@ fn encodeOptionalField(
     writer: anytype,
 ) Error!void {
     if (!message.hasFieldId(field.id)) return;
-    std.log.debug("encodeOptionalField() {s} .{s} .{s}", .{ field.name, field.type.tagName(), field.label.tagName() });
+    std.log.debug(
+        "encodeOptionalField() {s} .{s} .{s}",
+        .{ field.name, field.type.tagName(), field.label.tagName() },
+    );
 
     return encodeRequiredField(message, field, member, writer);
 }
@@ -837,7 +809,10 @@ fn encodeRepeatedField(
     writer: anytype,
 ) Error!void {
     const list = ptrAlignCast(*const List(u8), member);
-    std.log.debug("encodeRepeatedField() .{s} .{s} list.len={}", .{ field.type.tagName(), field.label.tagName(), list.len });
+    std.log.debug(
+        "encodeRepeatedField() .{s} .{s} list.len={}",
+        .{ field.type.tagName(), field.label.tagName(), list.len },
+    );
     if (flagsContain(field.flags, .FLAG_PACKED)) {
         todo("encodeRepeatedField() packed", .{});
     } else {
@@ -858,7 +833,10 @@ fn encodeOneofField(
     _ = message;
     _ = member;
     _ = writer;
-    todo("encodeOneofField() .{s} .{s}", .{ field.type.tagName(), field.label.tagName() });
+    todo(
+        "encodeOneofField() .{s} .{s}",
+        .{ field.type.tagName(), field.label.tagName() },
+    );
 }
 
 fn encodeUnlabeledField(
@@ -870,7 +848,10 @@ fn encodeUnlabeledField(
     _ = message;
     _ = member;
     _ = writer;
-    todo("encodeUnlabeledField() .{s} .{s}", .{ field.type.tagName(), field.label.tagName() });
+    todo(
+        "encodeUnlabeledField() .{s} .{s}",
+        .{ field.type.tagName(), field.label.tagName() },
+    );
 }
 
 fn encodeRequiredField(
@@ -880,7 +861,10 @@ fn encodeRequiredField(
     writer: anytype,
 ) Error!void {
     _ = message;
-    std.log.debug("encodeRequiredField() .{s} .{s}", .{ field.type.tagName(), field.label.tagName() });
+    std.log.debug(
+        "encodeRequiredField() .{s} .{s}",
+        .{ field.type.tagName(), field.label.tagName() },
+    );
     switch (field.type) {
         .TYPE_ENUM, .TYPE_INT32 => {
             const key = Key.init(.VARINT, field.id);
@@ -972,6 +956,5 @@ pub fn serialize(message: *const Message, writer: anytype) Error!void {
 fn debugit(m: *Message, comptime T: type) void {
     const it = @ptrCast(*T, m);
     _ = it;
-
     @breakpoint();
 }

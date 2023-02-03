@@ -83,6 +83,7 @@ pub const Context = struct {
     ch_file: std.fs.File,
     /// c .c file
     cc_file: std.fs.File,
+    enum_buf: std.ArrayListUnmanaged(i32) = .{},
 
     pub fn gen(ctx: *Context) !void {
         defer ctx.deinit();
@@ -98,6 +99,7 @@ pub const Context = struct {
         }
         ctx.depmap.deinit(ctx.alloc);
         ctx.parents.deinit(ctx.alloc);
+        ctx.enum_buf.deinit(ctx.alloc);
     }
 };
 

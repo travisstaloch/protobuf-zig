@@ -114,7 +114,7 @@ fn writeZigFieldTypeName(
 
 fn scalarFieldZigTypeName(field: *const FieldDescriptorProto) []const u8 {
     return switch (field.type) {
-        .TYPE_STRING => "String",
+        .TYPE_STRING, .TYPE_BYTES => "String",
         .TYPE_INT32 => "i32",
         .TYPE_DOUBLE => "f64",
         .TYPE_FLOAT => "f32",
@@ -128,7 +128,6 @@ fn scalarFieldZigTypeName(field: *const FieldDescriptorProto) []const u8 {
         .TYPE_SFIXED64 => "i64",
         .TYPE_SINT32 => "i32",
         .TYPE_SINT64 => "i64",
-        .TYPE_BYTES => "pbtypes.BinaryData",
         .TYPE_MESSAGE, .TYPE_ENUM, .TYPE_ERROR, .TYPE_GROUP => {
             // std.log.err("field {} {s} {s}", .{ field.name, field.label.tagName(), field.type.tagName() });
             unreachable;
@@ -138,7 +137,7 @@ fn scalarFieldZigTypeName(field: *const FieldDescriptorProto) []const u8 {
 
 fn scalarFieldZigDefault(field: *const FieldDescriptorProto) []const u8 {
     return switch (field.type) {
-        .TYPE_STRING => "String.empty",
+        .TYPE_STRING, .TYPE_BYTES => "String.empty",
         .TYPE_INT32,
         .TYPE_DOUBLE,
         .TYPE_FLOAT,
@@ -153,7 +152,6 @@ fn scalarFieldZigDefault(field: *const FieldDescriptorProto) []const u8 {
         .TYPE_SINT64,
         => "0",
         .TYPE_BOOL => "false",
-        .TYPE_BYTES => ".{}",
         .TYPE_MESSAGE, .TYPE_ENUM, .TYPE_ERROR, .TYPE_GROUP => unreachable,
     };
 }
@@ -390,15 +388,31 @@ pub fn genMessageTypedef(
 pub fn genEnum(
     enumproto: *const EnumDescriptorProto,
     _: *const FileDescriptorProto,
-    ctx: anytype,
+    ctx: *Context,
 ) !void {
     const writer = ctx.zig_file.writer();
     try writer.print(
         "pub const {s} = enum(i32) {{\n",
         .{enumproto.name},
     );
+    ctx.enum_buf.items.len = 0;
     for (enumproto.value.slice()) |value| {
-        try writer.print("{s} = {},\n", .{ value.name, value.number });
+        const isdup = (mem.indexOfScalar(i32, ctx.enum_buf.items, value.number) != null);
+        if (isdup) {
+            if (enumproto.options.allow_alias)
+                try writer.print(
+                    "pub const {s} = {};\n",
+                    .{ value.name, value.number },
+                )
+            else
+                return genErr(
+                    "duplicate enum value {} in {s}.{s}",
+                    .{ value.number, value.name, enumproto.name },
+                    error.DuplicateEnumValue,
+                );
+        } else try writer.print("{s} = {},\n", .{ value.name, value.number });
+
+        try ctx.enum_buf.append(ctx.alloc, value.number);
     }
 
     _ = try writer.write(
