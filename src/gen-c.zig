@@ -24,8 +24,8 @@ const OneofDescriptorProto = plugin.OneofDescriptorProto;
 const top_level = @This();
 
 pub const pbzig_prefix = "PbZig";
-pub const ch_extension = ".pb.h";
-pub const cc_extension = ".pb.c";
+pub const ch_extension = "pb.h";
+pub const cc_extension = "pb.c";
 
 /// proto_file = null means the package name won't be included
 fn writeFieldCTypeName(

@@ -18,7 +18,7 @@ const ArrayListMut = pb.extern_types.ArrayListMut;
 // typedefs
 // ---
 
-pub const SomeKind = enum(u8) {
+pub const SomeKind = enum(i32) {
     NONE = 0,
     A = 1,
     B = 2,

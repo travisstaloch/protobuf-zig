@@ -68,7 +68,7 @@ fn writeZigFieldTypeName(
     ctx: *Context,
 ) !void {
     // scalar fields
-    if (!field.isPresentField(.type_name) and field.isPresentField(.type)) {
+    if (!field.has(.type_name) and field.has(.type)) {
         const type_name = scalarFieldZigTypeName(field);
         try writer.print(prefix ++ "{s}" ++ suffix, .{type_name});
         return;
@@ -216,7 +216,7 @@ pub fn genMessage(
 
     // gen fields
     for (message.field.slice()) |field| {
-        if (field.isPresentField(.oneof_index)) continue;
+        if (field.has(.oneof_index)) continue;
         const field_name = field.name.slice();
         if (std.zig.Token.keywords.get(field_name) != null)
             try zig_writer.print("@\"{s}\": ", .{field_name})
@@ -237,7 +237,7 @@ pub fn genMessage(
     for (message.oneof_decl.slice()) |oneof, i| {
         try zig_writer.print("{s}: extern union {{\n", .{oneof.name});
         for (message.field.slice()) |field| {
-            if (field.isPresentField(.oneof_index) and field.oneof_index == i) {
+            if (field.has(.oneof_index) and field.oneof_index == i) {
                 try zig_writer.print("{s}: ", .{field.name});
                 try writeZigFieldType(field, proto_file, ctx);
                 _ = try zig_writer.write(",\n");
@@ -248,7 +248,7 @@ pub fn genMessage(
 
     // gen default value decls
     for (message.field.slice()) |field| {
-        if (field.isPresentField(.default_value)) {
+        if (field.has(.default_value)) {
             try zig_writer.print(
                 \\pub const {s}_default: 
             , .{field.name});
@@ -326,7 +326,7 @@ pub fn genFieldDescriptors(
         \\
     );
     for (message.field.slice()) |field| {
-        const is_oneof = field.isPresentField(.oneof_index);
+        const is_oneof = field.has(.oneof_index);
 
         try zig_writer.print(
             \\FieldDescriptor.init("{s}",
@@ -360,7 +360,7 @@ pub fn genFieldDescriptors(
         }
 
         // default value arg
-        if (field.isPresentField(.default_value)) {
+        if (field.has(.default_value)) {
             _ = try zig_writer.write("&");
             try writeTypeName(.{ .message = message }, ctx, zig_writer);
             try zig_writer.print(".{s}_default,\n", .{field.name});
@@ -392,14 +392,10 @@ pub fn genEnum(
     _: *const FileDescriptorProto,
     ctx: anytype,
 ) !void {
-    const bits = try std.math.ceilPowerOfTwo(usize, @max(8, std.math.log2_int_ceil(
-        usize,
-        @max(enumproto.value.len, 1),
-    )));
     const writer = ctx.zig_file.writer();
     try writer.print(
-        "pub const {s} = enum(u{}) {{\n",
-        .{ enumproto.name, bits },
+        "pub const {s} = enum(i32) {{\n",
+        .{enumproto.name},
     );
     for (enumproto.value.slice()) |value| {
         try writer.print("{s} = {},\n", .{ value.name, value.number });
