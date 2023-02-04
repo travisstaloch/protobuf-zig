@@ -74,7 +74,7 @@ pub fn ListMut(comptime T: type) type {
 /// returns ArrayList(T)
 pub fn ListMutScalar(comptime T: type) type {
     assert(T == String or !std.meta.trait.isContainer(T));
-    return ArrayList(T);
+    return ArrayListMut(T);
 }
 
 /// similar to std.ArrayList but can be used in extern structs
@@ -154,6 +154,19 @@ pub fn ListMixins(comptime T: type, comptime Self: type, comptime Slice: type) t
         pub fn appendAssumeCapacity(l: *Self, item: T) void {
             const ptr = l.addOneAssumeCapacity();
             ptr.* = item;
+        }
+
+        pub fn appendSlice(l: *Self, allocator: mem.Allocator, items: []const T) !void {
+            try l.ensureTotalCapacity(allocator, l.len + items.len);
+            try l.appendSliceAssumeCapacity(items);
+        }
+
+        pub fn appendSliceAssumeCapacity(l: *Self, items: []const T) !void {
+            const old_len = l.len;
+            const new_len = old_len + items.len;
+            assert(new_len <= l.cap);
+            l.len = new_len;
+            mem.copy(T, l.items[old_len..new_len], items);
         }
 
         pub fn ensureTotalCapacity(l: *Self, allocator: mem.Allocator, new_cap: usize) !void {
