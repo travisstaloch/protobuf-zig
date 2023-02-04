@@ -1,4 +1,5 @@
 const std = @import("std");
+const GenFormat = @import("src/common.zig").GenFormat;
 
 pub fn build(b: *std.build.Builder) void {
     const target = b.standardTargetOptions(.{});
@@ -15,6 +16,12 @@ pub fn build(b: *std.build.Builder) void {
         "protoc-gen-zig will echo contents of stdin as hex instead of raw bytes.  useful for capturing results of system protoc commands in hex format.",
     ) orelse false;
 
+    const gen_format = b.option(
+        GenFormat,
+        "gen-format",
+        "The output format of generated code.",
+    ) orelse .zig;
+
     const protobuf_pkg = std.build.Pkg{
         .name = "protobuf",
         .source = .{ .path = "src/lib.zig" },
@@ -28,6 +35,7 @@ pub fn build(b: *std.build.Builder) void {
     const build_options = b.addOptions();
     build_options.addOption(std.log.Level, "log_level", log_level);
     build_options.addOption(bool, "echo_hex", echo_hex);
+    build_options.addOption(GenFormat, "output_format", gen_format);
 
     // for capturing output of system installed protoc. just echoes out whatever protoc sends
     const protocgen_echo = b.addExecutable(.{

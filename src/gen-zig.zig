@@ -371,7 +371,9 @@ pub fn genFieldDescriptors(
             \\
         , .{
             if (is_oneof)
-                "@as(u8, 1)<<@enumToInt(FieldFlag.FLAG_ONEOF)"
+                "@enumToInt(FieldFlag.FLAG_ONEOF)"
+            else if (field.has(.options) and field.options.@"packed")
+                "@enumToInt(FieldFlag.FLAG_PACKED)"
             else
                 "0",
         });

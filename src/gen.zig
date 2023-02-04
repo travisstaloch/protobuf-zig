@@ -20,7 +20,9 @@ const String = extern_types.String;
 const top_level = @This();
 const genc = @import("gen-c.zig");
 const genzig = @import("gen-zig.zig");
-pub const output_format: enum { zig, c } = .zig;
+
+const output_format = @import("build_options").output_format;
+
 pub const generator = if (output_format == .zig)
     genzig
 else

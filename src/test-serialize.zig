@@ -18,7 +18,7 @@ const String = pb.extern_types.String;
 
 const talloc = testing.allocator;
 
-test "basic serialization" {
+test "basic ser" {
     var data = pb.descr.FieldOptions.init();
     data.set(.ctype, .STRING);
     data.set(.lazy, true);
@@ -53,4 +53,105 @@ test "basic serialization" {
     });
 
     try testing.expectEqualSlices(u8, message, buf.items);
+}
+
+test "packed repeated ser 1" {
+    // from https://developers.google.com/protocol-buffers/docs/encoding#packed
+    const Test5 = extern struct {
+        base: pb.pbtypes.Message,
+        // repeated int32 f = 6 [packed=true];
+        f: pb.extern_types.ArrayListMut(i32) = .{},
+
+        pub const field_ids = [_]c_uint{6};
+        pub const opt_field_ids = [_]c_uint{};
+        pub usingnamespace pb.pbtypes.MessageMixins(@This());
+
+        pub const field_descriptors = [_]pb.pbtypes.FieldDescriptor{
+            pb.pbtypes.FieldDescriptor.init(
+                "f",
+                6,
+                .LABEL_REPEATED,
+                .TYPE_INT32,
+                @offsetOf(@This(), "f"),
+                null,
+                null,
+                @enumToInt(pb.pbtypes.FieldDescriptor.FieldFlag.FLAG_PACKED),
+            ),
+        };
+    };
+
+    var data = Test5.init();
+    defer data.f.deinit(talloc);
+    try data.f.appendSlice(talloc, &.{ 3, 270, 86942 });
+    data.setPresent(.f);
+
+    var buf = std.ArrayList(u8).init(talloc);
+    defer buf.deinit();
+    try protobuf.serialize(&data.base, buf.writer());
+
+    var buf2: [64]u8 = undefined;
+    const actual = try std.fmt.bufPrint(&buf2, "{}", .{std.fmt.fmtSliceHexLower(buf.items)});
+    try testing.expectEqualStrings("3206038e029ea705", actual);
+}
+
+test "packed repeated ser 2" {
+    var data = pb.descr.FileDescriptorProto.init();
+    // defer data.base.deinit(talloc);
+    // ^ don't do this as it tries to free list strings and the bytes of data
+    var deps: pb.extern_types.ArrayListMut(String) = .{};
+    try deps.append(talloc, String.init("dep1"));
+    defer deps.deinit(talloc);
+    data.set(.dependency, deps);
+    var pubdeps: pb.extern_types.ArrayListMut(i32) = .{};
+    defer pubdeps.deinit(talloc);
+    try pubdeps.appendSlice(talloc, &.{ 0, 1, 2 });
+    data.set(.public_dependency, pubdeps);
+
+    var buf = std.ArrayList(u8).init(talloc);
+    defer buf.deinit();
+    try protobuf.serialize(&data.base, buf.writer());
+
+    var ctx = protobuf.context(buf.items, talloc);
+    const m = try ctx.deserialize(&pb.descr.FileDescriptorProto.descriptor);
+    defer m.deinit(talloc);
+    const T = pb.descr.FileDescriptorProto;
+    const data2 = try m.as(T);
+    try expectEqual(T, data, data2.*);
+}
+
+const TestError = error{ TestExpectedEqual, TestExpectedApproxEqAbs };
+fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
+    @setEvalBranchQuota(4000);
+    const tinfo = @typeInfo(T);
+    switch (tinfo) {
+        .Int, .Bool, .Enum => try std.testing.expectEqual(data, data2),
+        .Float => try std.testing.expectApproxEqAbs(data, data2, std.math.epsilon(T)),
+        .Struct => if (T == String) {
+            try std.testing.expectEqualStrings(data.slice(), data2.slice());
+        } else if (comptime mem.indexOf(u8, @typeName(T), "extern-types.ArrayList") != null) {
+            try std.testing.expectEqual(data.len, data2.len);
+            for (data.slice()) |it, i|
+                try expectEqual(@TypeOf(it), it, data2.items[i]);
+        } else {
+            const fe = std.meta.FieldEnum(T);
+            inline for (comptime std.meta.tags(fe)) |tag| {
+                if (comptime mem.eql(u8, @tagName(tag), "base")) continue;
+                const F = std.meta.FieldType(T, tag);
+                if (!@hasDecl(T, "has")) {
+                    const field = @field(data, @tagName(tag));
+                    const field2 = @field(data2, @tagName(tag));
+                    try expectEqual(F, field, field2);
+                } else if (data.has(tag)) {
+                    const field = @field(data, @tagName(tag));
+                    const field2 = @field(data2, @tagName(tag));
+                    try expectEqual(F, field, field2);
+                }
+            }
+        },
+        .Pointer => |ptr| switch (ptr.size) {
+            .One => return expectEqual(ptr.child, data.*, data2.*),
+            else => @compileError("unsupported type '" ++ @typeName(T) ++ "'"),
+        },
+        else => @compileError("unsupported type '" ++ @typeName(T) ++ "'"),
+    }
 }

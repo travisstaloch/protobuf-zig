@@ -359,6 +359,8 @@ pub fn genMessage(
             , .{
                 if (field.isPresentField(.oneof_index))
                     "0 | FIELD_FLAG_ONEOF"
+                else if (field.has(.options) and field.options.@"packed")
+                    "0 | FIELD_FLAG_PACKED"
                 else
                     "0",
             });

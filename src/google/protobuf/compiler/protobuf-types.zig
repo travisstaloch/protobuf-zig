@@ -68,7 +68,7 @@ fn Has(comptime T: type) fn (T, comptime std.meta.FieldEnum(T)) bool {
         const FieldEnum = std.meta.FieldEnum(T);
         pub fn has(self: T, comptime field_enum: std.meta.FieldEnum(T)) bool {
             const tagname = @tagName(field_enum);
-            const name = T.descriptor.name.slice();
+            const name = comptime T.descriptor.name.slice();
             if (comptime mem.eql(u8, "base", tagname))
                 compileErr("{s}.Has() field_enum == .base", .{name});
             const field_idx = std.meta.fieldIndex(T, tagname) orelse
@@ -533,6 +533,8 @@ pub const Message = extern struct {
         _ = try writer.write("}");
     }
 
+    /// frees any memory allocated during deserialize() including strings,
+    /// lists and lists of strings
     pub fn deinit(m: *Message, allocator: mem.Allocator) void {
         deinitImpl(m, allocator, .all_fields);
     }
@@ -561,9 +563,8 @@ pub const Message = extern struct {
                 continue;
             if (flagsContain(field.flags, .FLAG_ONEOF) and
                 !m.hasFieldId(field.id))
-            {
                 continue;
-            }
+
             if (field.label == .LABEL_REPEATED) {
                 if (field.type == .TYPE_STRING) {
                     const L = ListMutScalar(String);

@@ -2,8 +2,8 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const pb = @import("protobuf");
-const gen = pb.gen;
 pub const CodeGeneratorRequest = pb.plugin.CodeGeneratorRequest;
+pub const gen = @import("gen.zig");
 
 pub const std_options = struct {
     pub const log_level = std.meta.stringToEnum(std.log.Level, @tagName(@import("build_options").log_level)).?;

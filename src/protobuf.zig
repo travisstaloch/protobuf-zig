@@ -802,6 +802,23 @@ fn encodeOptionalField(
     return encodeRequiredField(message, field, member, writer);
 }
 
+fn encodeRepeatedPacked(
+    list: *const List(u8),
+    field: FieldDescriptor,
+    writer: anytype,
+) !void {
+    const size = repeatedEleSize(field.type);
+    var i: usize = 0;
+    while (i < list.len) : (i += 1) {
+        switch (field.type) {
+            .TYPE_INT32, .TYPE_UINT32 => {
+                const int = mem.readIntLittle(u32, (list.items + i * size)[0..4]);
+                try writeVarint128(u32, int, writer, .int);
+            },
+            else => todo("encode repeated packed .{s}", .{field.type.tagName()}),
+        }
+    }
+}
 fn encodeRepeatedField(
     message: *const Message,
     field: FieldDescriptor,
@@ -814,7 +831,12 @@ fn encodeRepeatedField(
         .{ field.type.tagName(), field.label.tagName(), list.len },
     );
     if (flagsContain(field.flags, .FLAG_PACKED)) {
-        todo("encodeRepeatedField() packed", .{});
+        var cwriter = std.io.countingWriter(std.io.null_writer);
+        try encodeRepeatedPacked(list, field, cwriter.writer());
+        const key = Key.init(.LEN, field.id);
+        try writeVarint128(usize, key.encode(), writer, .int);
+        try writeVarint128(usize, cwriter.bytes_written, writer, .int);
+        try encodeRepeatedPacked(list, field, writer);
     } else {
         const size = repeatedEleSize(field.type);
         var i: usize = 0;

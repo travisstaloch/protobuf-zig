@@ -1,6 +1,7 @@
 const std = @import("std");
 const mem = std.mem;
 
+pub const GenFormat = enum { zig, c };
 pub const panicf = std.debug.panic;
 pub fn ptrAlign(comptime Ptr: type) comptime_int {
     return @typeInfo(Ptr).Pointer.alignment;

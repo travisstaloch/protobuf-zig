@@ -504,7 +504,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "public_dependency"),
             null,
             null,
-            0,
+            @enumToInt(FieldDescriptor.FieldFlag.FLAG_PACKED),
         ),
         FieldDescriptor.init(
             "weak_dependency",
@@ -514,7 +514,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "weak_dependency"),
             null,
             null,
-            0,
+            @enumToInt(FieldDescriptor.FieldFlag.FLAG_PACKED),
         ),
         FieldDescriptor.init(
             "message_type",
@@ -1326,7 +1326,7 @@ pub const SourceCodeInfo = extern struct {
                 @offsetOf(Location, "path"),
                 null,
                 null,
-                0,
+                @enumToInt(FieldDescriptor.FieldFlag.FLAG_PACKED),
             ),
             FieldDescriptor.init(
                 "span",
@@ -1336,7 +1336,7 @@ pub const SourceCodeInfo = extern struct {
                 @offsetOf(Location, "span"),
                 null,
                 null,
-                0,
+                @enumToInt(FieldDescriptor.FieldFlag.FLAG_PACKED),
             ),
             FieldDescriptor.init(
                 "leading_comments",
