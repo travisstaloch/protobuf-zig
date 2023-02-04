@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub fn build(b: *std.build.Builder) void {
     const target = b.standardTargetOptions(.{});
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
 
     const log_level = b.option(
         std.log.Level,
@@ -30,15 +30,21 @@ pub fn build(b: *std.build.Builder) void {
     build_options.addOption(bool, "echo_hex", echo_hex);
 
     // for capturing output of system installed protoc. just echoes out whatever protoc sends
-    const protocgen_echo = b.addExecutable("protoc-gen-zig", "src/protoc-gen-zig.zig");
-    protocgen_echo.setTarget(target);
-    protocgen_echo.setBuildMode(mode);
+    const protocgen_echo = b.addExecutable(.{
+        .name = "protoc-gen-zig",
+        .root_source_file = .{ .path = "src/protoc-gen-zig.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
     protocgen_echo.install();
     protocgen_echo.addOptions("build_options", build_options);
 
-    const protoc_zig = b.addExecutable("protoc-zig", "src/main.zig");
-    protoc_zig.setTarget(target);
-    protoc_zig.setBuildMode(mode);
+    const protoc_zig = b.addExecutable(.{
+        .name = "protoc-zig",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
     protoc_zig.install();
     protoc_zig.addOptions("build_options", build_options);
     protoc_zig.addPackage(protobuf_pkg);
@@ -51,8 +57,11 @@ pub fn build(b: *std.build.Builder) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const main_tests = b.addTest("src/tests.zig");
-    main_tests.setBuildMode(mode);
+    const main_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/tests.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
     main_tests.addPackage(protobuf_pkg);
     // allow readme test to import from examples/gen
     main_tests.main_pkg_path = ".";
