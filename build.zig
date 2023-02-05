@@ -22,15 +22,9 @@ pub fn build(b: *std.build.Builder) void {
         "The output format of generated code.",
     ) orelse .zig;
 
-    const protobuf_pkg = std.build.Pkg{
-        .name = "protobuf",
-        .source = .{ .path = "src/lib.zig" },
-        // TODO get rid of this nesting
-        .dependencies = &.{.{
-            .name = "protobuf",
-            .source = .{ .path = "src/lib.zig" },
-        }},
-    };
+    const protobuf_mod = b.createModule(.{
+        .source_file = .{ .path = "src/lib.zig" },
+    });
 
     const build_options = b.addOptions();
     build_options.addOption(std.log.Level, "log_level", log_level);
@@ -55,7 +49,10 @@ pub fn build(b: *std.build.Builder) void {
     });
     protoc_zig.install();
     protoc_zig.addOptions("build_options", build_options);
-    protoc_zig.addPackage(protobuf_pkg);
+    protoc_zig.addAnonymousModule("protobuf", .{
+        .source_file = .{ .path = "src/lib.zig" },
+        .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
+    });
 
     const run_cmd = protoc_zig.run();
     run_cmd.step.dependOn(b.getInstallStep());
@@ -70,7 +67,10 @@ pub fn build(b: *std.build.Builder) void {
         .target = target,
         .optimize = optimize,
     });
-    main_tests.addPackage(protobuf_pkg);
+    main_tests.addAnonymousModule("protobuf", .{
+        .source_file = .{ .path = "src/lib.zig" },
+        .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
+    });
     // allow readme test to import from examples/gen
     main_tests.main_pkg_path = ".";
 
