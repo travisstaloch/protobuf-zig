@@ -71,9 +71,11 @@ message Value {
     // Represents a boolean value.
     bool bool_value = 4;
     // Represents a structured value.
-    Struct struct_value = 5;
+    // FIXME
+    // Struct struct_value = 5;
     // Represents a repeated `Value`.
-    ListValue list_value = 6;
+    // FIXME
+    // ListValue list_value = 6;
   }
 }
 

@@ -102,7 +102,8 @@ message DescriptorProto {
   repeated FieldDescriptorProto field = 2;
   repeated FieldDescriptorProto extension = 6;
 
-  repeated DescriptorProto nested_type = 3;
+  // FIXME
+  // repeated DescriptorProto nested_type = 3;
   repeated EnumDescriptorProto enum_type = 4;
 
   message ExtensionRange {

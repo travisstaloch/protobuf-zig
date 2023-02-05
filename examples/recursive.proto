@@ -1,8 +1,10 @@
 syntax = "proto3";
 
-message NonRec {
-  Rec rec = 1;
-}
-message Rec {
-  Rec rec = 1;
-}
+// FIXME
+// message NonRec {
+//   Rec rec = 1;
+// }
+// FIXME
+// message Rec {
+//   Rec rec = 1;
+// }

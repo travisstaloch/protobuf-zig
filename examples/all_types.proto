@@ -19,7 +19,8 @@ message All {
 
   message NestedMessage {
     int32 a = 1;
-    All corecursive = 2;
+    // FIXME
+    // All corecursive = 2;
   }
 
   enum NestedEnum {
@@ -47,9 +48,10 @@ message All {
   ForeignEnum opt_foreign_enum = 22;
   AliasedEnum opt_aliased_enum = 23;
 
-  // FIXME string opt_string_piece = 24 [ctype = STRING_PIECE];
-  // FIXME string opt_cord = 25 [ctype = CORD];
-  All recursive_message = 27;
+  string opt_string_piece = 24 [ctype = STRING_PIECE];
+  string opt_cord = 25 [ctype = CORD];
+  // FIXME
+  // All recursive_message = 27;
 
   repeated int32 rep_int32 = 31;
   repeated int64 rep_int64 = 32;
@@ -73,8 +75,8 @@ message All {
   repeated NestedEnum rep_nested_enum = 51;
   repeated ForeignEnum rep_foreign_enum = 52;
   repeated AliasedEnum rep_aliased_enum = 53;
-  // FIXME repeated string rep_string_piece = 54 [ctype = STRING_PIECE];
-  // FIXME repeated string rep_cord = 55 [ctype = CORD];
+  repeated string rep_string_piece = 54 [ctype = STRING_PIECE];
+  repeated string rep_cord = 55 [ctype = CORD];
 
   // Packed
   repeated int32 packed_int32 = 75 [packed = true];
@@ -121,7 +123,8 @@ message All {
       float oneof_float = 117;
       double oneof_double = 118;
       NestedEnum oneof_enum = 119;
-      google.protobuf.NullValue oneof_null_value = 120;
+      // FIXME
+      // google.protobuf.NullValue oneof_null_value = 120;
     }
   }
 }
@@ -135,6 +138,6 @@ enum ForeignEnum {
   FOREIGN_BAR = 1;
   FOREIGN_BAZ = 2;
 }
-
-import "google/protobuf/struct.proto";
+// FIXME
+// import "google/protobuf/struct.proto";
 

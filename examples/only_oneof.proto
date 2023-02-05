@@ -1,9 +1,12 @@
 syntax = "proto3";
 
 message Response {
-  string content = 1;
   oneof result {
     string error1 = 2;
     string error2 = 3;
+  }
+  oneof foo {
+    int32 bar = 4;
+    int32 baz = 5;
   }
 }
