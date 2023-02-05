@@ -36,6 +36,7 @@ pub const LocalError = error{
     InvalidType,
     InvalidData,
     InvalidMessageType,
+    InternalError,
 };
 
 pub const Error = std.mem.Allocator.Error ||
@@ -58,9 +59,8 @@ pub fn readVarint128(comptime T: type, reader: anytype, comptime mode: IntMode) 
         shift += 7;
     }
     if (mode == .sint) {
-        const S = std.meta.Int(.signed, @bitSizeOf(T));
-        const svalue = @bitCast(S, value);
-        value = @bitCast(T, (svalue >> 1) ^ (-(svalue & 1)));
+        const svalue = @bitCast(i64, value);
+        value = @bitCast(u64, (svalue >> 1) ^ (-(svalue & 1)));
     }
     return switch (@typeInfo(T).Int.signedness) {
         .signed => @truncate(T, @bitCast(i64, value)),
@@ -344,6 +344,15 @@ fn isPackableType(typ: pb.descr.FieldDescriptorProto.Type) bool {
         typ != .TYPE_MESSAGE;
 }
 
+fn packedReadAndListAdd(comptime T: type, reader: anytype, member: [*]u8, comptime mint_mode: ?IntMode) !void {
+    const int = if (mint_mode) |int_mode|
+        try readVarint128(T, reader, int_mode)
+    else
+        try reader.readIntLittle(T);
+
+    listAppend(member, ListMut(T), int);
+}
+
 fn parsePackedRepeatedMember(
     scanned_member: ScannedMember,
     member: [*]u8,
@@ -353,17 +362,37 @@ fn parsePackedRepeatedMember(
     const field = scanned_member.field orelse unreachable;
     var fbs = std.io.fixedBufferStream(scanned_member.data);
     const reader = fbs.reader();
-    switch (field.type) {
-        .TYPE_ENUM, .TYPE_INT32 => {
-            while (true) {
-                const int = readVarint128(i32, reader, .int) catch |e| switch (e) {
-                    error.EndOfStream => break,
-                    else => return e,
-                };
-                listAppend(member, ListMut(i32), int);
-            }
-        },
-        else => todo("{s}", .{@tagName(field.type)}),
+    while (true) {
+        const errunion = switch (field.type) {
+            .TYPE_ENUM,
+            .TYPE_INT32,
+            .TYPE_UINT32,
+            => packedReadAndListAdd(u32, reader, member, .int),
+            .TYPE_SINT32 => packedReadAndListAdd(u32, reader, member, .sint),
+            .TYPE_INT64,
+            .TYPE_UINT64,
+            => packedReadAndListAdd(u64, reader, member, .int),
+            .TYPE_SINT64 => packedReadAndListAdd(u64, reader, member, .sint),
+            .TYPE_FIXED32,
+            .TYPE_SFIXED32,
+            .TYPE_FLOAT,
+            => packedReadAndListAdd(u32, reader, member, null),
+            .TYPE_FIXED64,
+            .TYPE_SFIXED64,
+            .TYPE_DOUBLE,
+            => packedReadAndListAdd(u64, reader, member, null),
+            .TYPE_BOOL => packedReadAndListAdd(u8, reader, member, .int),
+            .TYPE_STRING,
+            .TYPE_MESSAGE,
+            .TYPE_BYTES,
+            .TYPE_GROUP,
+            .TYPE_ERROR,
+            => return common.panicf("unreachable {s}", .{@tagName(field.type)}),
+        };
+        _ = errunion catch |e| switch (e) {
+            error.EndOfStream => break,
+            else => return e,
+        };
     }
 }
 
@@ -373,13 +402,27 @@ fn parseOneofMember(
     message: *Message,
     ctx: *Ctx,
 ) !void {
-    _ = member;
-    _ = message;
-    _ = ctx;
     const field = scanned_member.field orelse unreachable;
-    switch (field.type) {
-        else => todo("{s}", .{@tagName(field.type)}),
+    const descriptor = message.descriptor orelse unreachable;
+    // If we have already parsed a member of this oneof, free it.
+    // if the message already contains a field_id from the same group,
+    // unset all members of the group
+    const oneofids_group = for (descriptor.oneof_field_ids.slice()) |oneof_ids| {
+        if (mem.indexOfScalar(c_uint, oneof_ids.slice(), field.id) != null) break oneof_ids;
+    } else return deserializeErr(
+        "internal error. couldn't find oneof group for field {s}.{s} with id {}",
+        .{ descriptor.name, field.name, field.id },
+        error.InternalError,
+    );
+    for (oneofids_group.slice()) |oneof_id| {
+        if (message.hasFieldId(oneof_id)) {
+            todo("free oneof field_id {}", .{oneof_id});
+            message.setPresentValue(oneof_id, false);
+        }
     }
+
+    try parseRequiredMember(scanned_member, member, message, ctx, true);
+    message.setPresent(field.id);
 }
 
 fn parseOptionalMember(
@@ -466,15 +509,56 @@ fn parseRequiredMember(
     );
 
     switch (field.type) {
-        .TYPE_INT32, .TYPE_ENUM => {
-            const int = try scanned_member.readVarint128(i32, .int);
+        .TYPE_INT32, .TYPE_UINT32, .TYPE_ENUM => {
+            const int = try scanned_member.readVarint128(u32, .int);
             std.log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
-                listAppend(member, ListMut(i32), int);
-            } else mem.writeIntLittle(i32, member[0..4], int);
+                listAppend(member, ListMut(u32), int);
+            } else mem.writeIntLittle(u32, member[0..4], int);
         },
-        .TYPE_BOOL => member[0] = scanned_member.data[0],
-        .TYPE_STRING => {
+        .TYPE_SINT32 => {
+            const int = try scanned_member.readVarint128(u32, .sint);
+            std.log.info("{s}: {}", .{ field.name, int });
+            if (field.label == .LABEL_REPEATED) {
+                listAppend(member, ListMut(u32), int);
+            } else mem.writeIntLittle(u32, member[0..4], int);
+        },
+        .TYPE_FIXED32, .TYPE_SFIXED32, .TYPE_FLOAT => {
+            const int = mem.readIntLittle(u32, scanned_member.data[0..4]);
+            std.log.info("{s}: {}", .{ field.name, int });
+            if (field.label == .LABEL_REPEATED) {
+                listAppend(member, ListMut(u32), int);
+            } else mem.writeIntLittle(u32, member[0..4], int);
+        },
+        .TYPE_FIXED64, .TYPE_SFIXED64, .TYPE_DOUBLE => {
+            const int = mem.readIntLittle(u64, scanned_member.data[0..8]);
+            std.log.info("{s}: {}", .{ field.name, int });
+            if (field.label == .LABEL_REPEATED) {
+                listAppend(member, ListMut(u64), int);
+            } else mem.writeIntLittle(u64, member[0..8], int);
+        },
+        .TYPE_INT64, .TYPE_UINT64 => {
+            const int = try scanned_member.readVarint128(u64, .int);
+            std.log.info("{s}: {}", .{ field.name, int });
+            if (field.label == .LABEL_REPEATED) {
+                listAppend(member, ListMut(u64), int);
+            } else mem.writeIntLittle(u64, member[0..8], int);
+        },
+        .TYPE_SINT64 => {
+            const int = try scanned_member.readVarint128(u64, .sint);
+            std.log.info("{s}: {}", .{ field.name, int });
+            if (field.label == .LABEL_REPEATED) {
+                listAppend(member, ListMut(u64), int);
+            } else mem.writeIntLittle(u64, member[0..8], int);
+        },
+        .TYPE_BOOL => {
+            const int = try scanned_member.readVarint128(u8, .int);
+            std.log.info("{s}: {}", .{ field.name, int });
+            if (field.label == .LABEL_REPEATED) {
+                listAppend(member, ListMut(u8), int);
+            } else member[0] = int;
+        },
+        .TYPE_STRING, .TYPE_BYTES => {
             if (wire_type != .LEN) return error.FieldMissing;
 
             const bytes = try ctx.allocator.dupe(u8, scanned_member.data);
@@ -488,8 +572,11 @@ fn parseRequiredMember(
         },
         .TYPE_MESSAGE => {
             if (wire_type != .LEN) {
-                std.log.err("unexpected wire_type .{s}", .{@tagName(wire_type)});
-                return error.FieldMissing;
+                return deserializeErr(
+                    "unexpected wire_type .{s}",
+                    .{@tagName(wire_type)},
+                    error.FieldMissing,
+                );
             }
 
             std.log.debug(
@@ -498,17 +585,21 @@ fn parseRequiredMember(
             );
 
             if (field.descriptor == null) {
-                std.log.err("field.descriptor == null field {}", .{field.*});
-                return error.DescriptorMissing;
+                return deserializeErr(
+                    "field.descriptor == null field {}",
+                    .{field.*},
+                    error.DescriptorMissing,
+                );
             }
 
             var limctx = ctx.withData(scanned_member.data);
             const field_desc = field.getDescriptor(MessageDescriptor);
 
-            std.log.info(
-                ".{s} {s} sizeof={}",
-                .{ field.label.tagName(), field_desc.name, field_desc.sizeof_message },
-            );
+            std.log.info(".{s} {s} sizeof={}", .{
+                field.label.tagName(),
+                field_desc.name,
+                field_desc.sizeof_message,
+            });
 
             if (field.label == .LABEL_REPEATED) {
                 const subm = try deserialize(field_desc, &limctx);
@@ -678,6 +769,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                     );
                 }
                 sm.data.len = 8;
+                ctx.skip(8);
             },
             .I32 => {
                 if (ctx.data.len < 4) {
@@ -688,6 +780,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                     );
                 }
                 sm.data.len = 4;
+                ctx.skip(4);
             },
             .LEN => {
                 const lens = try ctx.scanLengthPrefixedData();
@@ -795,7 +888,7 @@ fn encodeOptionalField(
 ) Error!void {
     if (!message.hasFieldId(field.id)) return;
     std.log.debug(
-        "encodeOptionalField() {s} .{s} .{s}",
+        "encodeOptionalField() '{s}' .{s} .{s}",
         .{ field.name, field.type.tagName(), field.label.tagName() },
     );
 
@@ -811,11 +904,38 @@ fn encodeRepeatedPacked(
     var i: usize = 0;
     while (i < list.len) : (i += 1) {
         switch (field.type) {
-            .TYPE_INT32, .TYPE_UINT32 => {
+            .TYPE_INT32, .TYPE_UINT32, .TYPE_ENUM => {
                 const int = mem.readIntLittle(u32, (list.items + i * size)[0..4]);
                 try writeVarint128(u32, int, writer, .int);
             },
-            else => todo("encode repeated packed .{s}", .{field.type.tagName()}),
+            .TYPE_SINT32 => {
+                const int = mem.readIntLittle(u32, (list.items + i * size)[0..4]);
+                try writeVarint128(u32, int, writer, .sint);
+            },
+            .TYPE_SINT64 => {
+                const int = mem.readIntLittle(u64, (list.items + i * size)[0..8]);
+                try writeVarint128(u64, int, writer, .sint);
+            },
+            .TYPE_INT64, .TYPE_UINT64 => {
+                const int = mem.readIntLittle(u64, (list.items + i * size)[0..8]);
+                try writeVarint128(u64, int, writer, .int);
+            },
+            .TYPE_BOOL => try writeVarint128(u8, list.items[i], writer, .int),
+            .TYPE_FIXED32, .TYPE_FLOAT, .TYPE_SFIXED32 => {
+                const int = mem.readIntLittle(u32, (list.items + i * size)[0..4]);
+                try writer.writeIntLittle(u32, int);
+            },
+            .TYPE_FIXED64, .TYPE_DOUBLE, .TYPE_SFIXED64 => {
+                const int = mem.readIntLittle(u64, (list.items + i * size)[0..8]);
+                try writer.writeIntLittle(u64, int);
+            },
+
+            .TYPE_STRING,
+            .TYPE_MESSAGE,
+            .TYPE_BYTES,
+            .TYPE_GROUP,
+            .TYPE_ERROR,
+            => return common.panicf("unreachable {s}", .{@tagName(field.type)}),
         }
     }
 }
@@ -827,8 +947,8 @@ fn encodeRepeatedField(
 ) Error!void {
     const list = ptrAlignCast(*const List(u8), member);
     std.log.debug(
-        "encodeRepeatedField() .{s} .{s} list.len={}",
-        .{ field.type.tagName(), field.label.tagName(), list.len },
+        "encodeRepeatedField() '{s}' .{s} .{s} list.len={}",
+        .{ field.name, field.type.tagName(), field.label.tagName(), list.len },
     );
     if (flagsContain(field.flags, .FLAG_PACKED)) {
         var cwriter = std.io.countingWriter(std.io.null_writer);
@@ -852,13 +972,19 @@ fn encodeOneofField(
     member: [*]const u8,
     writer: anytype,
 ) Error!void {
-    _ = message;
-    _ = member;
-    _ = writer;
-    todo(
+    std.log.debug(
         "encodeOneofField() .{s} .{s}",
         .{ field.type.tagName(), field.label.tagName() },
     );
+    if (!message.hasFieldId(field.id)) return;
+    if (field.type == .TYPE_MESSAGE or
+        field.type == .TYPE_STRING)
+    {
+        // const void *ptr = *(const void * const *) member;
+        // if (ptr == NULL || ptr == field.default_value)
+        //     return 0;
+    }
+    return encodeRequiredField(message, field, member, writer);
 }
 
 fn encodeUnlabeledField(
@@ -884,15 +1010,27 @@ fn encodeRequiredField(
 ) Error!void {
     _ = message;
     std.log.debug(
-        "encodeRequiredField() .{s} .{s}",
-        .{ field.type.tagName(), field.label.tagName() },
+        "encodeRequiredField() '{s}' .{s} .{s}",
+        .{ field.name, field.type.tagName(), field.label.tagName() },
     );
     switch (field.type) {
-        .TYPE_ENUM, .TYPE_INT32 => {
+        .TYPE_ENUM, .TYPE_INT32, .TYPE_UINT32 => {
             const key = Key.init(.VARINT, field.id);
             try writeVarint128(usize, key.encode(), writer, .int);
             const value = mem.readIntLittle(i32, member[0..4]);
             try writeVarint128(i32, value, writer, .int);
+        },
+        .TYPE_SINT32 => {
+            const key = Key.init(.VARINT, field.id);
+            try writeVarint128(usize, key.encode(), writer, .int);
+            const value = mem.readIntLittle(i32, member[0..4]);
+            try writeVarint128(i32, value, writer, .sint);
+        },
+        .TYPE_SINT64 => {
+            const key = Key.init(.VARINT, field.id);
+            try writeVarint128(usize, key.encode(), writer, .int);
+            const value = mem.readIntLittle(i64, member[0..8]);
+            try writeVarint128(i64, value, writer, .sint);
         },
         .TYPE_UINT64, .TYPE_INT64 => {
             const key = Key.init(.VARINT, field.id);
@@ -900,22 +1038,22 @@ fn encodeRequiredField(
             const value = mem.readIntLittle(u64, member[0..8]);
             try writeVarint128(u64, value, writer, .int);
         },
-        .TYPE_DOUBLE => {
-            const key = Key.init(.I64, field.id);
-            try writeVarint128(usize, key.encode(), writer, .int);
-            const value = mem.readIntLittle(u64, member[0..8]);
-            try writeVarint128(u64, value, writer, .int);
-        },
-        .TYPE_FLOAT => {
-            const key = Key.init(.I32, field.id);
-            try writeVarint128(usize, key.encode(), writer, .int);
-            const value = mem.readIntLittle(u32, member[0..4]);
-            try writeVarint128(u32, value, writer, .int);
-        },
         .TYPE_BOOL => {
             const key = Key.init(.VARINT, field.id);
             try writeVarint128(usize, key.encode(), writer, .int);
-            try writer.writeByte(member[0]);
+            try writeVarint128(u8, member[0], writer, .int);
+        },
+        .TYPE_DOUBLE, .TYPE_FIXED64, .TYPE_SFIXED64 => {
+            const key = Key.init(.I64, field.id);
+            try writeVarint128(usize, key.encode(), writer, .int);
+            const value = mem.readIntLittle(u64, member[0..8]);
+            try writer.writeIntLittle(u64, value);
+        },
+        .TYPE_FLOAT, .TYPE_FIXED32, .TYPE_SFIXED32 => {
+            const key = Key.init(.I32, field.id);
+            try writeVarint128(usize, key.encode(), writer, .int);
+            const value = mem.readIntLittle(u32, member[0..4]);
+            try writer.writeIntLittle(u32, value);
         },
         .TYPE_MESSAGE => {
             var cwriter = std.io.countingWriter(std.io.null_writer);
@@ -931,6 +1069,7 @@ fn encodeRequiredField(
             try writeVarint128(usize, key.encode(), writer, .int);
             const s = ptrAlignCast(*const String, member);
             try writeVarint128(usize, s.len, writer, .int);
+            std.log.debug("string {*}/{}:{x}", .{ s.items, s.len, s.len });
             _ = try writer.write(s.slice());
         },
         else => todo("encodeRequiredField() field.type .{s}", .{field.type.tagName()}),
