@@ -36,7 +36,7 @@ fn writeFieldCTypeName(
     writer: anytype,
 ) !void {
     _ = try writer.write(prefix);
-    if (!field.isPresentField(.type_name) and field.isPresentField(.type)) {
+    if (!field.has(.type_name) and field.has(.type)) {
         _ = try writer.write(scalarFieldCTypeName(field));
     } else {
         const package = if (mproto_file) |pf| pf.package else String.empty;
@@ -91,7 +91,7 @@ fn scalarFieldCDefault(field: *const FieldDescriptorProto) []const u8 {
 
 /// doesn't handle TYPE_{ENUM,BOOL,MESSAGE,ERROR,GROUP}
 fn fieldCDefaultValue(field: *const FieldDescriptorProto) []const u8 {
-    assert(field.isPresentField(.default_value));
+    assert(field.has(.default_value));
     return switch (field.type) {
         .TYPE_BYTES,
         .TYPE_STRING,
@@ -210,7 +210,7 @@ pub fn genMessage(
         // gen struct fields
         _ = try ch_writer.write("PbZigMessage base;\n");
         for (message.field.slice()) |field| {
-            if (field.isPresentField(.oneof_index)) continue;
+            if (field.has(.oneof_index)) continue;
             try writeCFieldType(field, null, ch_writer);
             _ = try ch_writer.write(" ");
             const field_name = field.name.slice();
@@ -221,7 +221,7 @@ pub fn genMessage(
         for (message.oneof_decl.slice()) |_, i| {
             _ = try ch_writer.write("union {\n");
             for (message.field.slice()) |field| {
-                if (field.isPresentField(.oneof_index) and field.oneof_index == i) {
+                if (field.has(.oneof_index) and field.oneof_index == i) {
                     try writeCFieldType(field, null, ch_writer);
                     try ch_writer.print(" {s};\n", .{field.name});
                 }
@@ -247,9 +247,9 @@ pub fn genMessage(
 
         var nwritten: usize = 0;
         for (message.field.slice()) |field| {
-            if (field.isPresentField(.oneof_index)) continue;
+            if (field.has(.oneof_index)) continue;
             if (nwritten != 0) _ = try ch_writer.write(", \\\n");
-            if (field.isPresentField(.default_value)) switch (field.type) {
+            if (field.has(.default_value)) switch (field.type) {
                 .TYPE_ENUM => _ = {
                     const type_name = common.splitOn([]const u8, field.type_name.slice(), '.')[1];
                     try writeTitleCase(ch_writer, String.init(type_name));
@@ -288,7 +288,7 @@ pub fn genMessage(
         const cc_writer = ctx.cc_file.writer();
         // gen default value decls
         for (message.field.slice()) |field| {
-            if (field.isPresentField(.default_value)) {
+            if (field.has(.default_value)) {
                 try writeCFieldType(field, null, cc_writer);
                 _ = try cc_writer.write(" ");
                 try writeCName(cc_writer, proto_file.package, node, ctx, null);
@@ -345,7 +345,7 @@ pub fn genMessage(
             }
 
             // default value arg
-            if (field.isPresentField(.default_value)) {
+            if (field.has(.default_value)) {
                 _ = try cc_writer.write("&");
                 try writeCName(cc_writer, proto_file.package, node, ctx, null);
                 try cc_writer.print("__{s}__default_value,\n", .{field.name});
@@ -357,7 +357,7 @@ pub fn genMessage(
                 \\}},
                 \\
             , .{
-                if (field.isPresentField(.oneof_index))
+                if (field.has(.oneof_index))
                     "0 | FIELD_FLAG_ONEOF"
                 else if (field.has(.options) and field.options.@"packed")
                     "0 | FIELD_FLAG_PACKED"
