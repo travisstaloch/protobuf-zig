@@ -299,6 +299,7 @@ pub const MessageDescriptor = extern struct {
     fields: List(FieldDescriptor),
     field_ids: List(c_uint),
     opt_field_ids: List(c_uint),
+    oneof_field_ids: List(List(c_uint)),
     message_init: MessageInit = null,
     reserved1: ?*anyopaque = null,
     reserved2: ?*anyopaque = null,
@@ -306,9 +307,14 @@ pub const MessageDescriptor = extern struct {
 
     pub fn init(comptime T: type) MessageDescriptor {
         comptime {
+            @setEvalBranchQuota(10_000);
             const typename = @typeName(T);
             const names = common.splitOn([]const u8, typename, '.');
             const name = names[1];
+            const oneof_field_ids = if (@hasDecl(T, "oneof_field_ids"))
+                &T.oneof_field_ids
+            else
+                &.{};
             var result: MessageDescriptor = .{
                 .magic = MESSAGE_DESCRIPTOR_MAGIC,
                 .name = String.init(name),
@@ -318,11 +324,12 @@ pub const MessageDescriptor = extern struct {
                 .fields = List(FieldDescriptor).init(&T.field_descriptors),
                 .field_ids = List(c_uint).init(&T.field_ids),
                 .opt_field_ids = List(c_uint).init(&T.opt_field_ids),
+                .oneof_field_ids = List(List(c_uint)).init(oneof_field_ids),
                 .message_init = InitBytes(T),
             };
             // TODO - audit and remove unnecessary checks
             {
-                // TODO remove this hack which just works around dependency loop
+                // TODO remove this hack whichjust works around dependency loop
                 // along with field.recursive_descriptor
                 var fields = result.fields.items[0..result.fields.len].*;
                 for (fields) |field, i| {
@@ -350,7 +357,8 @@ pub const MessageDescriptor = extern struct {
                 n_oneof_fields +=
                     @boolToInt(flagsContain(field.flags, .FLAG_ONEOF));
             const len = @typeInfo(T).Struct.fields.len;
-            const actual_len = fields.len + 1 - (n_oneof_fields -| 1);
+            const actual_len = fields.len + 1 -
+                (n_oneof_fields -| oneof_field_ids.len);
             if (actual_len != len) compileErr(
                 "{s} field lengths mismatch. expected {} got {}",
                 .{ name, len, actual_len },
@@ -361,11 +369,21 @@ pub const MessageDescriptor = extern struct {
             if (!mem.eql(u8, tfields[0].name, "base"))
                 compileErr("{s} missing 'base' field ", .{name});
             if (tfields[0].type != Message)
-                compileErr("{s} 'base' field expected 'Message' type. got '{s}'.", .{@typeName(tfields[0].type)});
-            for (tfields[1..tfields.len]) |f, i| {
-                const field = fields.items[i];
-                if (!flagsContain(field.flags, .FLAG_ONEOF) and
-                    !mem.eql(u8, f.name, field.name.slice()))
+                compileErr(
+                    "{s} 'base' field expected 'Message' type. got '{s}'.",
+                    .{@typeName(tfields[0].type)},
+                );
+
+            // compare field names, offsets
+            var i: usize = 0;
+            for (fields.slice()) |field| {
+                const f = tfields[i + 1];
+                if (flagsContain(field.flags, .FLAG_ONEOF)) {
+                    // only add the size of oneof fields once
+                    // TODO verify union field names match
+                    continue;
+                }
+                if (!mem.eql(u8, f.name, field.name.slice()))
                     compileErr(
                         "{s} field name mismatch. expected '{s}' got '{s}'",
                         .{ name, f.name, field.name },
@@ -379,14 +397,19 @@ pub const MessageDescriptor = extern struct {
                     );
                 fields_total_size += expected_offset - last_field_offset;
                 last_field_offset = expected_offset;
+                i += 1;
             }
-            fields_total_size += sizeof_message - fields.items[fields.len - 1].offset;
-            if (fields_total_size != sizeof_message)
-                compileErr(
-                    "{s} size mismatch expected {} but fields total calculated size is {}",
-                    .{ name, sizeof_message, fields_total_size },
-                );
 
+            if (fields.len != 0 and oneof_field_ids.len <= 1) {
+                // TODO verify total size when oneof_field_ids.len > 1
+                fields_total_size += sizeof_message - fields.items[fields.len - 1].offset;
+                if (fields_total_size != sizeof_message) {
+                    compileErr(
+                        "{s} size mismatch expected {} but fields total calculated size is {}",
+                        .{ name, sizeof_message, fields_total_size },
+                    );
+                }
+            }
             return result;
         }
     }
@@ -450,6 +473,21 @@ pub const Message = extern struct {
         // TODO if oneof field, remove other fields w/ same oneof_index
     }
 
+    /// set or unset `m.optional_fields_present` at the field index corresponding to
+    /// `field_id` if `field_id` is a non optional field
+    pub fn setPresentValue(m: *Message, field_id: c_uint, value: bool) void {
+        const desc = m.descriptor orelse
+            @panic("called setPresentValue() on a message with no descriptor.");
+        std.log.debug("setPresentValue({}) - {any}", .{ field_id, desc.opt_field_ids });
+        const opt_field_idx = desc.optionalFieldIndex(field_id) orelse return;
+        if (value)
+            m.optional_fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx)
+        else
+            m.optional_fields_present &= ~(@as(u64, 1) << @intCast(u6, opt_field_idx));
+        std.log.debug("setPresentValue 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
+        // TODO if oneof field, remove other fields w/ same oneof_index
+    }
+
     /// if `field_index` is an optional field, set `m.optional_fields_present`
     /// at `field_index`
     pub fn setPresentFieldIndex(m: *Message, field_index: usize) void {
@@ -478,57 +516,123 @@ pub const Message = extern struct {
             const field_id = desc.field_ids.items[i];
             // skip if optional field and not present
             const field_name = f.name.slice();
-            if (message.hasFieldId(field_id)) {
-                switch (f.type) {
-                    .TYPE_MESSAGE => {
-                        if (f.label == .LABEL_REPEATED) {
-                            const list = ptrAlignCast(*const ListMut(*Message), member);
-                            if (list.len == 0) continue; // prevent extra commas
-                            try writer.print(".{s} = &.{{", .{field_name});
-                            for (list.slice()) |it, j| {
-                                if (j != 0) _ = try writer.write(", ");
-                                try Message.formatMessage(it, writer);
-                            }
-                            _ = try writer.write("}");
-                        } else {
-                            try writer.print(".{s} = ", .{field_name});
-                            try Message.formatMessage(ptrAlignCast(*const Message, member), writer);
+            if (message.hasFieldId(field_id)) switch (f.type) {
+                .TYPE_MESSAGE => {
+                    if (f.label == .LABEL_REPEATED) {
+                        const list = ptrAlignCast(*const ListMut(*Message), member);
+                        if (list.len == 0) continue; // prevent extra commas
+                        try writer.print(".{s} = &.{{", .{field_name});
+                        for (list.slice()) |it, j| {
+                            if (j != 0) _ = try writer.write(", ");
+                            try Message.formatMessage(it, writer);
                         }
-                    },
-                    .TYPE_STRING => {
-                        if (f.label == .LABEL_REPEATED) {
-                            const list = ptrAlignCast(*const ListMutScalar(String), member);
-                            if (list.len == 0) continue; // prevent extra commas
-                            try writer.print(".{s} = &.{{", .{field_name});
-                            for (list.slice()) |it, j| {
-                                if (j != 0) _ = try writer.write(", ");
-                                try writer.print("\"{}\"", .{it});
-                            }
-                            _ = try writer.write("}");
-                        } else try writer.print(".{s} = \"{}\"", .{ field_name, ptrAlignCast(*const String, member).* });
-                    },
-                    .TYPE_BOOL => {
-                        if (f.label == .LABEL_REPEATED) todo("format repeated bool", .{});
-                        try writer.print(".{s} = {}", .{ field_name, member[0] });
-                    },
-                    .TYPE_INT32, .TYPE_ENUM => {
-                        if (f.label == .LABEL_REPEATED) {
-                            const list = ptrAlignCast(*const ListMutScalar(i32), member);
-                            if (list.len == 0) continue; // prevent extra commas
-                            try writer.print(".{s} = &.{{", .{field_name});
-                            for (list.slice()) |it, j| {
-                                if (j != 0) _ = try writer.write(", ");
-                                try writer.print("{}", .{it});
-                            }
-                            _ = try writer.write("}");
-                        } else try writer.print(".{s} = {}", .{ field_name, @bitCast(i32, member[0..4].*) });
-                    },
-                    else => {
-                        todo(".{s} .{s}", .{ @tagName(f.type), @tagName(f.label) });
-                    },
-                }
-                if (i != fields.len - 1) _ = try writer.write(", ");
-            }
+                        _ = try writer.write("}");
+                    } else {
+                        try writer.print(".{s} = ", .{field_name});
+                        try Message.formatMessage(ptrAlignCast(*const Message, member), writer);
+                    }
+                },
+                .TYPE_STRING, .TYPE_BYTES => {
+                    if (f.label == .LABEL_REPEATED) {
+                        const list = ptrAlignCast(*const ListMutScalar(String), member);
+                        if (list.len == 0) continue; // prevent extra commas
+                        try writer.print(".{s} = &.{{", .{field_name});
+                        for (list.slice()) |it, j| {
+                            if (j != 0) _ = try writer.write(", ");
+                            try writer.print("\"{}\"", .{it});
+                        }
+                        _ = try writer.write("}");
+                    } else try writer.print(".{s} = \"{}\"", .{ field_name, ptrAlignCast(*const String, member).* });
+                },
+                .TYPE_BOOL => {
+                    if (f.label == .LABEL_REPEATED) {
+                        const list = ptrAlignCast(*const ListMutScalar(bool), member);
+                        if (list.len == 0) continue; // prevent extra commas
+                        try writer.print(".{s} = &.{{", .{field_name});
+                        for (list.slice()) |it, j| {
+                            if (j != 0) _ = try writer.write(", ");
+                            try writer.print("{}", .{it});
+                        }
+                        _ = try writer.write("}");
+                    } else try writer.print(".{s} = {}", .{ field_name, member[0] != 0 });
+                },
+                .TYPE_INT32, .TYPE_ENUM, .TYPE_SINT32, .TYPE_SFIXED32 => {
+                    if (f.label == .LABEL_REPEATED) {
+                        const list = ptrAlignCast(*const ListMutScalar(i32), member);
+                        if (list.len == 0) continue; // prevent extra commas
+                        try writer.print(".{s} = &.{{", .{field_name});
+                        for (list.slice()) |it, j| {
+                            if (j != 0) _ = try writer.write(", ");
+                            try writer.print("{}", .{it});
+                        }
+                        _ = try writer.write("}");
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(i32, member[0..4].*) });
+                },
+                .TYPE_UINT32, .TYPE_FIXED32 => {
+                    if (f.label == .LABEL_REPEATED) {
+                        const list = ptrAlignCast(*const ListMutScalar(u32), member);
+                        if (list.len == 0) continue; // prevent extra commas
+                        try writer.print(".{s} = &.{{", .{field_name});
+                        for (list.slice()) |it, j| {
+                            if (j != 0) _ = try writer.write(", ");
+                            try writer.print("{}", .{it});
+                        }
+                        _ = try writer.write("}");
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(u32, member[0..4].*) });
+                },
+                .TYPE_INT64, .TYPE_SINT64, .TYPE_SFIXED64 => {
+                    if (f.label == .LABEL_REPEATED) {
+                        const list = ptrAlignCast(*const ListMutScalar(i64), member);
+                        if (list.len == 0) continue; // prevent extra commas
+                        try writer.print(".{s} = &.{{", .{field_name});
+                        for (list.slice()) |it, j| {
+                            if (j != 0) _ = try writer.write(", ");
+                            try writer.print("{}", .{it});
+                        }
+                        _ = try writer.write("}");
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(i64, member[0..8].*) });
+                },
+                .TYPE_UINT64, .TYPE_FIXED64 => {
+                    if (f.label == .LABEL_REPEATED) {
+                        const list = ptrAlignCast(*const ListMutScalar(u64), member);
+                        if (list.len == 0) continue; // prevent extra commas
+                        try writer.print(".{s} = &.{{", .{field_name});
+                        for (list.slice()) |it, j| {
+                            if (j != 0) _ = try writer.write(", ");
+                            try writer.print("{}", .{it});
+                        }
+                        _ = try writer.write("}");
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(u64, member[0..8].*) });
+                },
+                .TYPE_FLOAT => {
+                    if (f.label == .LABEL_REPEATED) {
+                        const list = ptrAlignCast(*const ListMutScalar(f32), member);
+                        if (list.len == 0) continue; // prevent extra commas
+                        try writer.print(".{s} = &.{{", .{field_name});
+                        for (list.slice()) |it, j| {
+                            if (j != 0) _ = try writer.write(", ");
+                            try writer.print("{}", .{it});
+                        }
+                        _ = try writer.write("}");
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(f32, member[0..4].*) });
+                },
+                .TYPE_DOUBLE => {
+                    if (f.label == .LABEL_REPEATED) {
+                        const list = ptrAlignCast(*const ListMutScalar(f64), member);
+                        if (list.len == 0) continue; // prevent extra commas
+                        try writer.print(".{s} = &.{{", .{field_name});
+                        for (list.slice()) |it, j| {
+                            if (j != 0) _ = try writer.write(", ");
+                            try writer.print("{}", .{it});
+                        }
+                        _ = try writer.write("}");
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(f64, member[0..8].*) });
+                },
+                else => {
+                    todo(".{s} .{s}", .{ @tagName(f.type), @tagName(f.label) });
+                },
+            };
+            if (i != fields.len - 1) _ = try writer.write(", ");
         }
         _ = try writer.write("}");
     }
@@ -566,7 +670,7 @@ pub const Message = extern struct {
                 continue;
 
             if (field.label == .LABEL_REPEATED) {
-                if (field.type == .TYPE_STRING) {
+                if (field.type == .TYPE_STRING or field.type == .TYPE_BYTES) {
                     const L = ListMutScalar(String);
                     var list = ptrAlignCast(*L, bytes + field.offset);
                     if (list.len != 0) {
@@ -622,7 +726,7 @@ pub const Message = extern struct {
                         panicf("can't deinit a message with no descriptor.", .{});
                     allocator.free(subbytes[0..subdesc.sizeof_message]);
                 }
-            } else if (field.type == .TYPE_STRING) {
+            } else if (field.type == .TYPE_STRING or field.type == .TYPE_BYTES) {
                 var s = ptrAlignCast(*String, bytes + field.offset);
                 if (s.len != 0 and s.items != String.empty.items) {
                     std.log.debug(

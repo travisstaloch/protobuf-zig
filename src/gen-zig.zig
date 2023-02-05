@@ -260,7 +260,7 @@ pub fn genMessage(
         }
     }
 
-    // gen field_ids and opt_field_ids
+    // gen field_ids
     _ = try zig_writer.write(
         \\
         \\pub const field_ids = [_]c_uint{
@@ -269,19 +269,41 @@ pub fn genMessage(
         if (i != 0) _ = try zig_writer.write(", ");
         try zig_writer.print("{}", .{field.number});
     }
+    // gen opt_field_ids
     _ = try zig_writer.write(
         \\};
         \\pub const opt_field_ids = [_]c_uint{
     );
-    var nwritten: usize = 0;
-    for (message.field.slice()) |field| {
-        if (field.label == .LABEL_OPTIONAL) {
-            if (nwritten != 0) _ = try zig_writer.write(", ");
-            try zig_writer.print("{}", .{field.number});
-            nwritten += 1;
+    {
+        var nwritten: usize = 0;
+        for (message.field.slice()) |field| {
+            if (field.label == .LABEL_OPTIONAL) {
+                if (nwritten != 0) _ = try zig_writer.write(", ");
+                try zig_writer.print("{}", .{field.number});
+                nwritten += 1;
+            }
         }
     }
+    // gen oneof_field_ids
     _ = try zig_writer.write("};\n");
+    if (message.oneof_decl.len > 0) {
+        _ = try zig_writer.write(
+            "pub const oneof_field_ids = [_]ArrayList(c_uint){\n",
+        );
+        for (message.oneof_decl.slice()) |_, i| {
+            _ = try zig_writer.write("ArrayList(c_uint).init(&.{");
+            var nwritten: usize = 0;
+            for (message.field.slice()) |field| {
+                if (field.has(.oneof_index) and field.oneof_index == i) {
+                    if (nwritten != 0) _ = try zig_writer.write(", ");
+                    try zig_writer.print("{}", .{field.number});
+                    nwritten += 1;
+                }
+            }
+            _ = try zig_writer.write("}),\n");
+        }
+        _ = try zig_writer.write("};\n");
+    }
 
     try zig_writer.print(
         \\
@@ -463,6 +485,7 @@ pub fn genPrelude(
         \\const FieldFlag = FieldDescriptor.FieldFlag;
         \\const String = pb.extern_types.String;
         \\const ArrayListMut = pb.extern_types.ArrayListMut;
+        \\const ArrayList = pb.extern_types.ArrayList;
         \\
     );
 
