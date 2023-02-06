@@ -8,6 +8,8 @@ pub const GenStep = struct {
     lib_file: std.build.GeneratedFile,
     module: *std.Build.Module,
 
+    /// init a GenStep, create zig-cache/protobuf-zig if not exists, setup
+    /// dependencies, and setup args to exe.run()
     pub fn create(
         b: *std.build.Builder,
         exe: *std.build.LibExeObjStep,
@@ -61,7 +63,7 @@ pub const GenStep = struct {
         return self;
     }
 
-    /// creates a 'lib.zig' file at self.lib_file.path which just all
+    /// creates a 'lib.zig' file at self.lib_file.path which exports all
     /// generated .pb.zig files
     fn make(step: *std.build.Step) !void {
         const self = @fieldParentPtr(GenStep, "step", step);

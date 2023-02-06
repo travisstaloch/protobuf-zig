@@ -27,6 +27,6 @@ jobs:
         version: master
         # version: 0.10.0
 
-    - run: zig build test
+    - run: zig build && zig build test
     - run: zig build
  

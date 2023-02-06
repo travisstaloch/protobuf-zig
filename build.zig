@@ -80,9 +80,7 @@ pub fn build(b: *std.build.Builder) !void {
     });
     main_tests.addAnonymousModule("generated", .{
         .source_file = gen_step.module.source_file,
-        .dependencies = &.{
-            .{ .name = "protobuf", .module = protobuf_mod },
-        },
+        .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
     });
 
     const test_step = b.step("test", "Run library tests");

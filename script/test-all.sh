@@ -1,0 +1,1 @@
+zig build && zig build test && script/gen-all.sh -I examples examples/
