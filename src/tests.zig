@@ -10,7 +10,7 @@ test "readme" {
     // provided in build.zig or on the command line:
     const std = @import("std");
     const pb = @import("protobuf");
-    const Person = @import("../examples/gen/only_message.pb.zig").Person;
+    const Person = @import("generated").person.Person;
 
     // serialize to a writer
     const alloc = std.testing.allocator; // could be any zig std.mem.Allocator

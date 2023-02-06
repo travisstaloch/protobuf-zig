@@ -2,12 +2,13 @@
 # usage example: $ script/gen-all.sh -I examples examples/
 
 set -e
-ZIG_FLAGS= #-Dlog-level=info
+ZIG_FLAGS= #-Dgen-format=c #-Dlog-level=info
 zig build $ZIG_FLAGS -freference-trace
 DEST_DIR=gen
 
 # recursively remove all *.pb.zig files from $DEST_DIR
-find $DEST_DIR -name "*.pb.zig" -exec rm {} \;
+# find $DEST_DIR -name "*.pb.zig" -exec rm {} \;
+rm -rf gen/*
 
 # iterate args, skipping '-I examples'
 state="start"

@@ -1,7 +1,8 @@
 const std = @import("std");
 const GenFormat = @import("src/common.zig").GenFormat;
+const sdk = @import("sdk.zig");
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.build.Builder) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -15,7 +16,6 @@ pub fn build(b: *std.build.Builder) void {
         "echo-hex",
         "protoc-gen-zig will echo contents of stdin as hex instead of raw bytes.  useful for capturing results of system protoc commands in hex format.",
     ) orelse false;
-
     const gen_format = b.option(
         GenFormat,
         "gen-format",
@@ -62,6 +62,13 @@ pub fn build(b: *std.build.Builder) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
+    // generate files that need to be avaliable in tests
+    var gen_step = try sdk.GenStep.create(b, protoc_zig, &.{
+        "examples/all_types.proto",
+        "examples/only_enum.proto",
+        "examples/person.proto",
+    });
+
     const main_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/tests.zig" },
         .target = target,
@@ -71,9 +78,16 @@ pub fn build(b: *std.build.Builder) void {
         .source_file = .{ .path = "src/lib.zig" },
         .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
     });
-    // allow readme test to import from examples/gen
-    main_tests.main_pkg_path = ".";
+    main_tests.addAnonymousModule("generated", .{
+        .source_file = gen_step.module.source_file,
+        .dependencies = &.{
+            .{ .name = "protobuf", .module = protobuf_mod },
+        },
+    });
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);
+
+    test_step.dependOn(&gen_step.step);
+    b.getInstallStep().dependOn(&gen_step.step);
 }

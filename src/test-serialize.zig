@@ -253,8 +253,7 @@ fn testInit(
 }
 
 test "ser all" {
-    // TODO generate this file in a build step
-    const all_types = @import("../examples/gen/all_types2.pb.zig");
+    const all_types = @import("generated").all_types;
     const T = all_types.All;
 
     // init the all_types object
