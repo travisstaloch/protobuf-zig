@@ -82,10 +82,9 @@ pub fn build(b: *std.build.Builder) !void {
         .source_file = gen_step.module.source_file,
         .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
     });
+    main_tests.step.dependOn(b.getInstallStep());
+    main_tests.step.dependOn(&gen_step.step);
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);
-
-    test_step.dependOn(&gen_step.step);
-    b.getInstallStep().dependOn(&gen_step.step);
 }
