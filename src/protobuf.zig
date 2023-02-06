@@ -16,7 +16,8 @@ const Message = pbtypes.Message;
 const MessageDescriptor = pbtypes.MessageDescriptor;
 const FieldDescriptor = pbtypes.FieldDescriptor;
 const FieldFlag = FieldDescriptor.FieldFlag;
-const FieldDescriptorProto = pb.descr.FieldDescriptorProto;
+const descr = pb.descriptor;
+const FieldDescriptorProto = descr.FieldDescriptorProto;
 const flagsContain = pbtypes.flagsContain;
 const common = pb.common;
 const ptrAlignCast = common.ptrAlignCast;
@@ -339,7 +340,7 @@ const ScannedMember = struct {
     }
 };
 
-fn isPackableType(typ: pb.descr.FieldDescriptorProto.Type) bool {
+fn isPackableType(typ: descr.FieldDescriptorProto.Type) bool {
     return typ != .TYPE_STRING and typ != .TYPE_BYTES and
         typ != .TYPE_MESSAGE;
 }

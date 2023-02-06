@@ -5,10 +5,11 @@ const testing = std.testing;
 const pb = @import("protobuf");
 const pbtypes = pb.types;
 const plugin = pb.plugin;
+const descr = pb.descriptor;
 const protobuf = pb.protobuf;
 const ptrfmt = pb.common.ptrfmt;
 const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
-const FieldDescriptorProto = pb.descr.FieldDescriptorProto;
+const FieldDescriptorProto = descr.FieldDescriptorProto;
 const Key = pbtypes.Key;
 const tcommon = @import("test-common.zig");
 const lengthEncode = tcommon.lengthEncode;
@@ -219,7 +220,7 @@ test "message deinit" {
 
 test "message missing required fields" {
     testing.log_level = .err;
-    const req = deserializeBytesHelper(pb.descr.UninterpretedOption.NamePart, "", talloc);
+    const req = deserializeBytesHelper(descr.UninterpretedOption.NamePart, "", talloc);
     try testing.expectError(error.RequiredFieldMissing, req);
 }
 

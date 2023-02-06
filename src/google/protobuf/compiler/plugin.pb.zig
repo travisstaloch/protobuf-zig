@@ -20,7 +20,7 @@ const pbtypes = pb.pbtypes;
 const MessageMixins = pbtypes.MessageMixins;
 const Message = pbtypes.Message;
 const FieldDescriptor = pbtypes.FieldDescriptor;
-const FileDescriptorProto = pb.descr.FileDescriptorProto;
+const FileDescriptorProto = pb.descriptor.FileDescriptorProto;
 
 pub const Version = extern struct {
     base: Message,
