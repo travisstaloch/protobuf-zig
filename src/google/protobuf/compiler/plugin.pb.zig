@@ -16,10 +16,9 @@ const String = extern_types.String;
 const ListMut = extern_types.ListMut;
 const types = pb.types;
 const ListMutScalar = extern_types.ListMutScalar;
-const pbtypes = pb.pbtypes;
-const MessageMixins = pbtypes.MessageMixins;
-const Message = pbtypes.Message;
-const FieldDescriptor = pbtypes.FieldDescriptor;
+const MessageMixins = types.MessageMixins;
+const Message = types.Message;
+const FieldDescriptor = types.FieldDescriptor;
 const FileDescriptorProto = pb.descriptor.FileDescriptorProto;
 
 pub const Version = extern struct {

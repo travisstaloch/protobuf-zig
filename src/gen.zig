@@ -13,9 +13,8 @@ const EnumDescriptorProto = descr.EnumDescriptorProto;
 const FileDescriptorProto = descr.FileDescriptorProto;
 const FieldDescriptorProto = descr.FieldDescriptorProto;
 const OneofDescriptorProto = plugin.OneofDescriptorProto;
-const pbtypes = pb.pbtypes;
-const FieldDescriptor = pbtypes.FieldDescriptor;
-const EnumDescriptor = pbtypes.EnumDescriptor;
+const FieldDescriptor = types.FieldDescriptor;
+const EnumDescriptor = types.EnumDescriptor;
 const extern_types = pb.extern_types;
 const String = extern_types.String;
 const top_level = @This();
@@ -184,7 +183,7 @@ pub fn importInfo(
     const dotdot_count = mem.count(u8, pfname_rest, "/");
     // if the ident is a zig keyword, add a trailing '_'
     const is_keyword = std.zig.Token.keywords.get(ident) != null or
-        pbtypes.reserved_words.get(ident) != null;
+        types.reserved_words.get(ident) != null;
 
     return .{ .ident = ident, .path = path, .is_keyword = is_keyword, .dotdot_count = dotdot_count };
 }

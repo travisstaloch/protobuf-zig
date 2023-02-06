@@ -11,14 +11,13 @@ const extern_types = pb.extern_types;
 const List = extern_types.ArrayList;
 const ListMut = extern_types.ArrayListMut;
 const String = extern_types.String;
-const pbtypes = pb.pbtypes;
-const Message = pbtypes.Message;
-const MessageDescriptor = pbtypes.MessageDescriptor;
-const FieldDescriptor = pbtypes.FieldDescriptor;
+const Message = types.Message;
+const MessageDescriptor = types.MessageDescriptor;
+const FieldDescriptor = types.FieldDescriptor;
 const FieldFlag = FieldDescriptor.FieldFlag;
 const descr = pb.descriptor;
 const FieldDescriptorProto = descr.FieldDescriptorProto;
-const flagsContain = pbtypes.flagsContain;
+const flagsContain = types.flagsContain;
 const common = pb.common;
 const ptrAlignCast = common.ptrAlignCast;
 const ptrfmt = common.ptrfmt;
@@ -620,7 +619,7 @@ fn parseMember(
     ctx: *Ctx,
 ) !void {
     const field = scanned_member.field orelse {
-        var ufield = try ctx.allocator.create(pbtypes.MessageUnknownField);
+        var ufield = try ctx.allocator.create(types.MessageUnknownField);
         ufield.* = .{
             .key = scanned_member.key,
             .data = String.init(try ctx.allocator.dupe(u8, scanned_member.data)),
@@ -651,9 +650,9 @@ fn parseMember(
 
 fn messageTypeName(magic: u32) []const u8 {
     return switch (magic) {
-        pbtypes.MESSAGE_DESCRIPTOR_MAGIC => "message",
-        pbtypes.ENUM_DESCRIPTOR_MAGIC => "enum",
-        pbtypes.SERVICE_DESCRIPTOR_MAGIC => "service",
+        types.MESSAGE_DESCRIPTOR_MAGIC => "message",
+        types.ENUM_DESCRIPTOR_MAGIC => "enum",
+        types.SERVICE_DESCRIPTOR_MAGIC => "service",
         else => "unknown",
     };
 }
@@ -690,7 +689,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
     // TODO make this dynamic to allow for larger structs
     var required_fields_bitmap = std.StaticBitSet(128).initEmpty();
     var n_unknown: u32 = 0;
-    try verifyMessageType(desc.magic, pbtypes.MESSAGE_DESCRIPTOR_MAGIC);
+    try verifyMessageType(desc.magic, types.MESSAGE_DESCRIPTOR_MAGIC);
 
     std.log.info("\n+++ deserialize {s} {}-{}/{} size=0x{x}/{} data len {} +++", .{
         desc.name,
@@ -1079,7 +1078,7 @@ fn encodeRequiredField(
 
 fn encodeUnknownField(
     message: *const Message,
-    ufield: *const pbtypes.MessageUnknownField,
+    ufield: *const types.MessageUnknownField,
     writer: anytype,
 ) Error!void {
     _ = message;
@@ -1094,7 +1093,7 @@ pub fn serialize(message: *const Message, writer: anytype) Error!void {
         error.DescriptorMissing,
     );
     std.log.info("+++ serialize {}", .{desc.name});
-    try verifyMessageType(desc.magic, pbtypes.MESSAGE_DESCRIPTOR_MAGIC);
+    try verifyMessageType(desc.magic, types.MESSAGE_DESCRIPTOR_MAGIC);
     const buf = @ptrCast([*]const u8, message)[0..desc.sizeof_message];
     for (desc.fields.slice()) |field| {
         const member = buf.ptr + field.offset;

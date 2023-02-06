@@ -64,16 +64,16 @@ test "basic ser" {
 test "packed repeated ser 1" {
     // from https://developers.google.com/protocol-buffers/docs/encoding#packed
     const Test5 = extern struct {
-        base: pb.pbtypes.Message,
+        base: pb.types.Message,
         // repeated int32 f = 6 [packed=true];
         f: pb.extern_types.ArrayListMut(i32) = .{},
 
         pub const field_ids = [_]c_uint{6};
         pub const opt_field_ids = [_]c_uint{};
-        pub usingnamespace pb.pbtypes.MessageMixins(@This());
+        pub usingnamespace pb.types.MessageMixins(@This());
 
-        pub const field_descriptors = [_]pb.pbtypes.FieldDescriptor{
-            pb.pbtypes.FieldDescriptor.init(
+        pub const field_descriptors = [_]pb.types.FieldDescriptor{
+            pb.types.FieldDescriptor.init(
                 "f",
                 6,
                 .LABEL_REPEATED,
@@ -81,7 +81,7 @@ test "packed repeated ser 1" {
                 @offsetOf(@This(), "f"),
                 null,
                 null,
-                @enumToInt(pb.pbtypes.FieldDescriptor.FieldFlag.FLAG_PACKED),
+                @enumToInt(pb.types.FieldDescriptor.FieldFlag.FLAG_PACKED),
             ),
         };
     };
