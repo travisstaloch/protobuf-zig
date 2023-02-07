@@ -7,6 +7,38 @@ const Key = types.Key;
 const protobuf = pb.protobuf;
 const String = pb.extern_types.String;
 
+/// 1. genrate zig-out/bin/protoc-gen-zig by running $ zig build
+/// 2. run the following with a modified $PATH that includes zig-out/bin/
+///    $ protoc --plugin zig-out/bin/protoc-gen-zig --zig_out=gen `protofile`
+pub fn parseWithSystemProtoc(protofile: []const u8, alloc: mem.Allocator) ![]const u8 {
+    { // make sure the exe is built in echo mode
+        _ = try std.ChildProcess.exec(.{ .allocator = alloc, .argv = &.{ "zig", "build" } });
+    }
+    const r = try std.ChildProcess.exec(.{
+        .allocator = alloc,
+        .argv = &.{ "protoc", "--plugin", "zig-out/bin/protoc-gen-zig", "--zig_out=gen", protofile },
+    });
+    alloc.free(r.stdout);
+    return r.stderr;
+}
+
+pub fn deserializeHelper(comptime T: type, protofile: []const u8, alloc: mem.Allocator) !*T {
+    const bytes = try parseWithSystemProtoc(protofile, alloc);
+    defer alloc.free(bytes);
+    return deserializeBytesHelper(T, bytes, alloc);
+}
+pub fn deserializeBytesHelper(comptime T: type, bytes: []const u8, alloc: mem.Allocator) !*T {
+    var ctx = protobuf.context(bytes, alloc);
+    const message = try ctx.deserialize(&T.descriptor);
+    return try message.as(T);
+}
+pub fn deserializeHexBytesHelper(comptime T: type, hexbytes: []const u8, alloc: mem.Allocator) !*T {
+    var out = try alloc.alloc(u8, hexbytes.len / 2);
+    defer alloc.free(out);
+    const bytes = try std.fmt.hexToBytes(out, hexbytes);
+    return deserializeBytesHelper(T, bytes, alloc);
+}
+
 pub fn encodeVarint(comptime T: type, i: T) []const u8 {
     var buf: [32]u8 = undefined; // handles upto u512
     var fbs = std.io.fixedBufferStream(&buf);

@@ -15,42 +15,13 @@ const tcommon = pb.testing;
 const lengthEncode = tcommon.lengthEncode;
 const encodeMessage = tcommon.encodeMessage;
 const encodeVarint = tcommon.encodeVarint;
+const deserializeHelper = tcommon.deserializeHelper;
+const deserializeBytesHelper = tcommon.deserializeBytesHelper;
+const deserializeHexBytesHelper = tcommon.deserializeHexBytesHelper;
 
 const talloc = testing.allocator;
 // var tarena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 // const talloc = tarena.allocator();
-
-/// 1. genrate zig-out/bin/protoc-gen-zig by running $ zig build
-/// 2. run the following with a modified $PATH that includes zig-out/bin/
-///    $ protoc --plugin zig-out/bin/protoc-gen-zig --zig_out=gen `protofile`
-fn parseWithSystemProtoc(protofile: []const u8) ![]const u8 {
-    { // make sure the exe is built in echo mode
-        _ = try std.ChildProcess.exec(.{ .allocator = talloc, .argv = &.{ "zig", "build" } });
-    }
-    const r = try std.ChildProcess.exec(.{
-        .allocator = talloc,
-        .argv = &.{ "protoc", "--plugin", "zig-out/bin/protoc-gen-zig", "--zig_out=gen", protofile },
-    });
-    talloc.free(r.stdout);
-    return r.stderr;
-}
-
-fn deserializeHelper(comptime T: type, protofile: []const u8, alloc: mem.Allocator) !*T {
-    const bytes = try parseWithSystemProtoc(protofile);
-    defer alloc.free(bytes);
-    return deserializeBytesHelper(T, bytes, alloc);
-}
-fn deserializeBytesHelper(comptime T: type, bytes: []const u8, alloc: mem.Allocator) !*T {
-    var ctx = protobuf.context(bytes, alloc);
-    const message = try ctx.deserialize(&T.descriptor);
-    return try message.as(T);
-}
-fn deserializeHexBytesHelper(comptime T: type, hexbytes: []const u8, alloc: mem.Allocator) !*T {
-    var out = try alloc.alloc(u8, hexbytes.len / 2);
-    defer alloc.free(out);
-    const bytes = try std.fmt.hexToBytes(out, hexbytes);
-    return deserializeBytesHelper(T, bytes, alloc);
-}
 
 test "examples/only_enum - system protoc" {
     const req = try deserializeHelper(CodeGeneratorRequest, "examples/only_enum.proto", talloc);
