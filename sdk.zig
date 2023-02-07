@@ -98,10 +98,14 @@ pub const GenStep = struct {
             for (name[1..]) |c, i| {
                 if (!std.ascii.isAlphanumeric(c)) buf[i + 1] = '_';
             }
+            const path = if (std.mem.startsWith(u8, source.path, "examples/"))
+                source.path[0..endidx]["examples/".len..]
+            else
+                source.path[0..endidx];
             try writer.print(
                 \\pub const {s} = @import("{s}.pb.zig");
                 \\
-            , .{ buf[0..name.len], name });
+            , .{ buf[0..name.len], path });
         }
     }
 };

@@ -68,6 +68,13 @@ pub fn build(b: *std.build.Builder) !void {
         "examples/only_enum.proto",
         "examples/person.proto",
         "examples/oneof-2.proto",
+        "examples/conformance.proto",
+        "examples/google/protobuf/wrappers.proto",
+        "examples/google/protobuf/timestamp.proto",
+        "examples/google/protobuf/field_mask.proto",
+        "examples/google/protobuf/duration.proto",
+        "examples/google/protobuf/any.proto",
+        "examples/google/protobuf/test_messages_proto3.proto",
     });
 
     const main_tests = b.addTest(.{
@@ -88,4 +95,23 @@ pub fn build(b: *std.build.Builder) !void {
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);
+
+    const conformance_exe = b.addExecutable(.{
+        .name = "conformance",
+        .root_source_file = .{ .path = "src/conformance.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    conformance_exe.install();
+    conformance_exe.addOptions("build_options", build_options);
+    conformance_exe.addAnonymousModule("protobuf", .{
+        .source_file = .{ .path = "src/lib.zig" },
+        .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
+    });
+    conformance_exe.addAnonymousModule("generated", .{
+        .source_file = gen_step.module.source_file,
+        .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
+    });
+    conformance_exe.step.dependOn(&gen_step.step);
+    conformance_exe.install();
 }
