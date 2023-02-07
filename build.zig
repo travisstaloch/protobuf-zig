@@ -67,6 +67,7 @@ pub fn build(b: *std.build.Builder) !void {
         "examples/all_types.proto",
         "examples/only_enum.proto",
         "examples/person.proto",
+        "examples/oneof-2.proto",
     });
 
     const main_tests = b.addTest(.{

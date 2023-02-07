@@ -85,10 +85,23 @@ pub const GenStep = struct {
                 '/',
             )) |i| i + 1 else 0;
             const name = source.path[startidx..endidx];
+            // remove illegal characters to make a zig identifier
+            var buf: [256]u8 = undefined;
+            std.mem.copy(u8, &buf, name);
+            if (!std.ascii.isAlphabetic(name[0]) and name[0] != '_') {
+                std.log.err(
+                    "invalid identifier '{s}'. filename must start with alphabetic or underscore",
+                    .{name},
+                );
+                return error.InvalidIdentifier;
+            }
+            for (name[1..]) |c, i| {
+                if (!std.ascii.isAlphanumeric(c)) buf[i + 1] = '_';
+            }
             try writer.print(
                 \\pub const {s} = @import("{s}.pb.zig");
                 \\
-            , .{ name, name });
+            , .{ buf[0..name.len], name });
         }
     }
 };

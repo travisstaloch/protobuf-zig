@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub usingnamespace @import("protobuf-types.zig");
+pub usingnamespace @import("meta.zig");
 
 pub fn IntegerBitset(comptime len: usize) type {
     const l = std.math.ceilPowerOfTwo(usize, @max(len, 1)) catch

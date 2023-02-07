@@ -11,7 +11,7 @@ const ptrfmt = pb.common.ptrfmt;
 const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
 const FieldDescriptorProto = descr.FieldDescriptorProto;
 const Key = pbtypes.Key;
-const tcommon = @import("test-common.zig");
+const tcommon = pb.testing;
 const lengthEncode = tcommon.lengthEncode;
 const encodeMessage = tcommon.encodeMessage;
 

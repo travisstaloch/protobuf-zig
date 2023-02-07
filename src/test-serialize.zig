@@ -11,7 +11,7 @@ const protobuf = pb.protobuf;
 const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
 const FieldDescriptorProto = descr.FieldDescriptorProto;
 const Key = types.Key;
-const tcommon = @import("test-common.zig");
+const tcommon = pb.testing;
 const encodeMessage = tcommon.encodeMessage;
 const lengthEncode = tcommon.lengthEncode;
 const encodeVarint = tcommon.encodeVarint;
@@ -104,6 +104,7 @@ test "packed repeated ser 2" {
     var data = descr.FileDescriptorProto.init();
     // defer data.base.deinit(talloc);
     // ^ don't do this as it tries to free list strings and the bytes of data
+    // which are non-heap allocated memory here.
     var deps: pb.extern_types.ArrayListMut(String) = .{};
     try deps.append(talloc, String.init("dep1"));
     defer deps.deinit(talloc);
@@ -125,7 +126,7 @@ test "packed repeated ser 2" {
     try expectEqual(T, data, data2.*);
 }
 
-test "ser all" {
+test "ser all_types.proto" {
     const all_types = @import("generated").all_types;
     const T = all_types.All;
 
@@ -137,10 +138,40 @@ test "ser all" {
     // serialize the object to buf
     var buf = std.ArrayList(u8).init(talloc);
     defer buf.deinit();
+    // testing.log_level = .debug;
     try protobuf.serialize(&data.base, buf.writer());
 
     // deserialize from buf and check equality
     var ctx = protobuf.context(buf.items, talloc);
+    const m = try ctx.deserialize(&T.descriptor);
+    defer m.deinit(talloc);
+    const data2 = try m.as(T);
+    try expectEqual(T, data, data2.*);
+
+    // serialize m to buf2 and verify buf and buf2 are equal
+    var buf2 = std.ArrayList(u8).init(talloc);
+    defer buf2.deinit();
+    try protobuf.serialize(m, buf2.writer());
+    try testing.expectEqualStrings(buf.items, buf2.items);
+}
+
+test "ser oneof-2.proto" {
+    const oneof_2 = @import("generated").oneof_2;
+    const T = oneof_2.TestAllTypesProto3;
+
+    // init the all_types object
+    var data = try testInit(T, null, tarena);
+    try testing.expect(data.base.hasFieldId(111));
+    try testing.expect(!data.has(.oneof_field__oneof_nested_message));
+
+    // // serialize the object to buf
+    var buf = std.ArrayList(u8).init(talloc);
+    defer buf.deinit();
+    try protobuf.serialize(&data.base, buf.writer());
+
+    // deserialize from buf and check equality
+    var ctx = protobuf.context(buf.items, talloc);
+    // testing.log_level = .debug;
     const m = try ctx.deserialize(&T.descriptor);
     defer m.deinit(talloc);
     const data2 = try m.as(T);
