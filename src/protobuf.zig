@@ -150,7 +150,8 @@ const Ctx = struct {
         return @ptrToInt(ctx.data.ptr) - @ptrToInt(ctx.data_start.ptr);
     }
 
-    pub fn skip(ctx: *Ctx, len: usize) void {
+    pub fn skip(ctx: *Ctx, len: usize) !void {
+        if (len > ctx.data.len) return error.NotEnoughBytesRead;
         ctx.data = ctx.data[len..];
     }
 
@@ -166,24 +167,8 @@ const Ctx = struct {
         var ctxfbs = ctx.fbs();
         const reader = ctxfbs.reader();
         const value = try top_level.readVarint128(T, reader, mode);
-        ctx.skip(ctxfbs.pos);
+        try ctx.skip(ctxfbs.pos);
         return value;
-    }
-
-    pub fn readEnum(ctx: *Ctx, comptime E: type) !E {
-        const value = try ctx.readVarint128(i64, .int);
-        return @intToEnum(E, if (@hasDecl(E, "is_aliased") and E.is_aliased)
-            // TODO this doesn't seem entirely correct as the value can represent multiple tags.
-            //      not enirely sure what to do here.
-            E.values[@bitCast(u64, value)]
-        else
-            value);
-    }
-
-    pub fn readBool(ctx: *Ctx) !bool {
-        const byte = ctx.data[0];
-        ctx.skip(1);
-        return byte != 0;
     }
 
     pub fn readKey(ctx: *Ctx) !Key {
@@ -195,22 +180,6 @@ const Ctx = struct {
             },
             .field_id = key >> 3,
         };
-    }
-
-    pub fn readInt64(ctx: *Ctx, comptime T: type) !T {
-        var ctxfbs = ctx.fbs();
-        const reader = ctxfbs.reader();
-        const result = @bitCast(T, try reader.readIntLittle(u64));
-        ctx.skip(ctxfbs.pos);
-        return result;
-    }
-
-    pub fn readInt32(ctx: *Ctx, comptime T: type) !T {
-        var ctxfbs = ctx.fbs();
-        const reader = ctxfbs.reader();
-        const result = @bitCast(T, try reader.readIntLittle(u32));
-        ctx.skip(ctxfbs.pos);
-        return result;
     }
 
     pub fn scanLengthPrefixedData(ctx: *Ctx) ![2]usize {
@@ -805,7 +774,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                     );
                 }
                 sm.data.len = 8;
-                ctx.skip(8);
+                ctx.skip(8) catch unreachable;
             },
             .I32 => {
                 if (ctx.data.len < 4) {
@@ -816,14 +785,14 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                     );
                 }
                 sm.data.len = 4;
-                ctx.skip(4);
+                ctx.skip(4) catch unreachable;
             },
             .LEN => {
                 const lens = try ctx.scanLengthPrefixedData();
                 sm.data = sm.data[lens[0]..];
                 sm.data.len = lens[1];
                 sm.prefix_len = lens[0];
-                ctx.skip(sm.data.len);
+                try ctx.skip(sm.data.len);
             },
             else => {
                 return deserializeErr(
