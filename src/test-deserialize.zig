@@ -14,6 +14,7 @@ const Key = pbtypes.Key;
 const tcommon = pb.testing;
 const lengthEncode = tcommon.lengthEncode;
 const encodeMessage = tcommon.encodeMessage;
+const encodeVarint = tcommon.encodeVarint;
 
 const talloc = testing.allocator;
 // var tarena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -232,4 +233,27 @@ test "message with map fields / nested types" {
     try testing.expectEqual(@as(usize, 1), req.proto_file.len);
     try testing.expectEqual(@as(usize, 1), req.proto_file.items[0].message_type.len);
     try testing.expectEqual(@as(usize, 1), req.proto_file.items[0].message_type.items[0].nested_type.len);
+}
+
+test "free oneof field when overwritten" {
+    const oneof_2 = @import("generated").oneof_2;
+    const T = oneof_2.TestAllTypesProto3;
+
+    const message = comptime encodeMessage(.{
+        Key.init(.LEN, 113), // TestAllTypesProto3.oneof_field__oneof_string
+        lengthEncode(.{"oneof_field__oneof_string"}),
+        Key.init(.LEN, 114), // TestAllTypesProto3.oneof_field__oneof_bytes
+        lengthEncode(.{"oneof_field__oneof_bytes"}),
+        Key.init(.LEN, 112), // TestAllTypesProto3.oneof_field__oneof_nested_message
+        lengthEncode(.{
+            Key.init(.VARINT, 1), // TestAllTypesProto3.NestedMessage.a
+            42,
+        }),
+        Key.init(.VARINT, 111), // TestAllTypesProto3.oneof_field__oneof_uint32
+        42,
+    });
+
+    var ctx = protobuf.context(message, talloc);
+    const m = try ctx.deserialize(&T.descriptor);
+    defer m.deinit(talloc);
 }

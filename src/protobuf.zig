@@ -416,8 +416,31 @@ fn parseOneofMember(
     );
     for (oneofids_group.slice()) |oneof_id| {
         if (message.hasFieldId(oneof_id)) {
+            const field_idx = intRangeLookup(descriptor.field_ids, oneof_id) catch
+                return deserializeErr(
+                "oneof_id {} not found in field_ids {}",
+                .{ oneof_id, descriptor.field_ids },
+                error.FieldMissing,
+            );
+            std.log.debug(
+                "oneof_id {} field_ids {}",
+                .{ oneof_id, descriptor.field_ids },
+            );
+            const old_field = descriptor.fields.items[field_idx];
+            const ele_size = repeatedEleSize(old_field.type);
+            switch (old_field.type) {
+                .TYPE_STRING, .TYPE_BYTES => {
+                    const s = ptrAlignCast(*const String, member);
+                    s.deinit(ctx.allocator);
+                },
+                .TYPE_MESSAGE => {
+                    const subm = ptrAlignCast(*const *Message, member);
+                    subm.*.deinit(ctx.allocator);
+                },
+                else => {},
+            }
+            @memset(member, 0, ele_size);
             message.setPresentValue(oneof_id, false);
-            std.log.warn("TODO free oneof field_id {}", .{oneof_id});
         }
     }
 
