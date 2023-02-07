@@ -181,21 +181,54 @@ pub fn genMessageTest(
 
     _ = try zig_writer.write(
         \\
-        \\test { // dummy test for typechecking
+        \\test {
         \\std.testing.log_level = .err; // suppress 'required field' warnings
-        \\_ = 
+        \\const T = 
     );
     try gen.writeParentNames(message, zig_writer, ctx, "");
     _ = try zig_writer.write(
         \\;
-        \\_ = 
-    );
-    try gen.writeParentNames(message, zig_writer, ctx, "");
-    _ = try zig_writer.write(
-        \\.descriptor;
+        \\var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        \\const tarena = arena.allocator();
+        \\const data = try pb.testing.testInit(T, null, tarena);
+        \\var buf = std.ArrayList(u8).init(std.testing.allocator);
+        \\defer buf.deinit();
+        \\try pb.protobuf.serialize(&data.base, buf.writer());
+        \\var ctx = pb.protobuf.context(buf.items, std.testing.allocator);
+        \\const m = try ctx.deserialize(&T.descriptor);
+        \\defer m.deinit(std.testing.allocator);
+        \\var buf2 = std.ArrayList(u8).init(std.testing.allocator);
+        \\defer buf2.deinit();
+        \\try pb.protobuf.serialize(m, buf2.writer());
+        \\try std.testing.expectEqualStrings(buf.items, buf2.items);
         \\}
         \\
     );
+}
+
+/// writes oneof ids only after all other ids
+fn genFieldIds(
+    message: *const DescriptorProto,
+    mlabel: ?FieldDescriptorProto.Label,
+    writer: anytype,
+) !void {
+    var nwritten: usize = 0;
+    for (message.field.slice()) |field| {
+        if (field.has(.oneof_index)) continue;
+        if (mlabel) |label| if (field.label != label) continue;
+        if (nwritten != 0) _ = try writer.write(", ");
+        try writer.print("{}", .{field.number});
+        nwritten += 1;
+    }
+    for (message.oneof_decl.slice()) |_, i| {
+        for (message.field.slice()) |field| {
+            if (field.has(.oneof_index) and field.oneof_index == i) {
+                if (nwritten != 0) _ = try writer.write(", ");
+                try writer.print("{}", .{field.number});
+                nwritten += 1;
+            }
+        }
+    }
 }
 
 pub fn genMessage(
@@ -264,27 +297,17 @@ pub fn genMessage(
         \\
         \\pub const field_ids = [_]c_uint{
     );
-    for (message.field.slice()) |field, i| {
-        if (i != 0) _ = try zig_writer.write(", ");
-        try zig_writer.print("{}", .{field.number});
-    }
+    try genFieldIds(message, null, zig_writer);
+
     // gen opt_field_ids
     _ = try zig_writer.write(
         \\};
         \\pub const opt_field_ids = [_]c_uint{
     );
-    {
-        var nwritten: usize = 0;
-        for (message.field.slice()) |field| {
-            if (field.label == .LABEL_OPTIONAL) {
-                if (nwritten != 0) _ = try zig_writer.write(", ");
-                try zig_writer.print("{}", .{field.number});
-                nwritten += 1;
-            }
-        }
-    }
-    // gen oneof_field_ids
+    try genFieldIds(message, .LABEL_OPTIONAL, zig_writer);
     _ = try zig_writer.write("};\n");
+
+    // gen oneof_field_ids
     if (message.oneof_decl.len > 0) {
         _ = try zig_writer.write(
             "pub const oneof_field_ids = [_]ArrayList(c_uint){\n",
@@ -310,7 +333,16 @@ pub fn genMessage(
         \\
     , .{});
 
-    try genFieldDescriptors(message, proto_file, ctx);
+    // gen field descriptors
+    _ = try zig_writer.write(
+        \\pub const field_descriptors = [_]FieldDescriptor{
+        \\
+    );
+    // gen all non-oneof descriptors first to match the order of
+    // field_ids and optional_field_ids
+    try genFieldDescriptors(message, proto_file, ctx, false);
+    try genFieldDescriptors(message, proto_file, ctx, true);
+    _ = try zig_writer.write("};\n");
 
     for (message.nested_type.slice()) |nested|
         try genMessage(nested, proto_file, ctx);
@@ -337,15 +369,13 @@ pub fn genFieldDescriptors(
     message: *const DescriptorProto,
     proto_file: *const FileDescriptorProto,
     ctx: *Context,
+    gen_oneof_fields: bool,
 ) !void {
     const zig_writer = ctx.zig_file.writer();
 
-    _ = try zig_writer.write(
-        \\pub const field_descriptors = [_]FieldDescriptor{
-        \\
-    );
     for (message.field.slice()) |field| {
         const is_oneof = field.has(.oneof_index);
+        if (gen_oneof_fields != is_oneof) continue;
 
         try zig_writer.print(
             \\FieldDescriptor.init("{s}",
@@ -399,7 +429,6 @@ pub fn genFieldDescriptors(
                 "0",
         });
     }
-    _ = try zig_writer.write("};\n");
 }
 
 pub fn genMessageTypedef(

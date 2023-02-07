@@ -2,8 +2,8 @@ const std = @import("std");
 const mem = std.mem;
 const testing = std.testing;
 const pb = @import("protobuf");
-const pbtypes = pb.types;
-const Key = pbtypes.Key;
+const types = pb.types;
+const Key = types.Key;
 const protobuf = pb.protobuf;
 const String = pb.extern_types.String;
 
@@ -79,20 +79,20 @@ pub fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
             for (data.slice()) |it, i|
                 try expectEqual(@TypeOf(it), it, data2.items[i]);
         } else {
-            const fe = std.meta.FieldEnum(T);
+            const fe = types.FieldEnum(T);
             inline for (comptime std.meta.tags(fe)) |tag| {
                 if (comptime mem.eql(u8, @tagName(tag), "base")) continue;
-                const F = std.meta.FieldType(T, tag);
+                const F = comptime types.FieldType(T, tag);
                 if (!@hasDecl(T, "has")) {
                     const field = @field(data, @tagName(tag));
                     const field2 = @field(data2, @tagName(tag));
                     try expectEqual(F, field, field2);
                 } else if (data.has(tag)) {
-                    const field = @field(data, @tagName(tag));
-                    const field2 = @field(data2, @tagName(tag));
                     const finfo = @typeInfo(F);
+                    const field = types.getFieldHelp(T, data, tag);
+                    const field2 = types.getFieldHelp(T, data2, tag);
                     if (finfo == .Union) { // oneof fields
-                        const ffe = std.meta.FieldEnum(F);
+                        const ffe = comptime types.FieldEnum(F);
                         const ftags = comptime std.meta.tags(ffe);
                         inline for (T.oneof_field_ids) |oneof_ids| {
                             inline for (comptime oneof_ids.slice()) |oneof_id, i| {
@@ -102,7 +102,7 @@ pub fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
                                 if (data.base.hasFieldId(oneof_id)) {
                                     const payload = @field(field, @tagName(ftag));
                                     const payload2 = @field(field2, @tagName(ftag));
-                                    const U = std.meta.FieldType(F, ftag);
+                                    const U = types.FieldType(F, ftag);
                                     try expectEqual(U, payload, payload2);
                                 }
                             }
@@ -126,6 +126,7 @@ pub fn testInit(
     comptime field_id: ?c_uint,
     alloc: mem.Allocator,
 ) mem.Allocator.Error!T {
+    @setEvalBranchQuota(10_000);
     switch (@typeInfo(T)) {
         .Int => return @intCast(T, field_id.?),
         .Bool => return true,
@@ -144,26 +145,29 @@ pub fn testInit(
             return pb.extern_types.ArrayListMut(T.Child).init(items);
         } else {
             var t = T.init();
-            const fe = std.meta.FieldEnum(T);
+            const fields = types.fields(T);
+            const fe = types.FieldEnum(T);
             const tags = comptime std.meta.tags(fe);
-            comptime var i: usize = 0;
-            inline while (i + 1 < tags.len) : (i += 1) {
-                const tag = tags[i + 1];
-                const F = std.meta.FieldType(T, tag);
-                const finfo = @typeInfo(F);
-                if (finfo == .Union) {
-                    const tagname = @tagName(tag);
-                    const fepl = std.meta.FieldEnum(F);
-                    const tagspl = (comptime std.meta.tags(fepl));
-                    const tagpl = tagspl[0];
-                    const C = std.meta.FieldType(F, tagpl);
-                    const plchild = try testInit(C, T.field_ids[0], alloc);
-                    const u = @unionInit(F, @tagName(tagpl), plchild);
-                    @field(t, tagname) = u;
-                    t.base.setPresent(T.field_ids[0]);
-
-                    // std.debug.print("\n\n\nplchild {}\n", .{plchild});
-                } else t.set(tag, try testInit(F, T.field_ids[i], alloc));
+            comptime var i: usize = 1;
+            inline while (i < fields.len) : (i += 1) {
+                const field = fields[i];
+                const F = field.ty();
+                const tag = tags[i];
+                if (field == .union_field) {
+                    const payload = try testInit(F, T.field_ids[0], alloc);
+                    t.set(tag, payload);
+                    // skip remaining union fields in this group
+                    if (i < T.field_ids.len) {
+                        const fid = T.field_ids[i];
+                        const oneof_ids = comptime for (T.oneof_field_ids) |oneof_ids| {
+                            if (mem.indexOfScalar(c_uint, oneof_ids.slice(), fid) != null)
+                                break oneof_ids;
+                        } else unreachable;
+                        i += oneof_ids.len;
+                    }
+                } else {
+                    t.set(tag, try testInit(F, T.field_ids[i - 1], alloc));
+                }
             }
             return t;
         },

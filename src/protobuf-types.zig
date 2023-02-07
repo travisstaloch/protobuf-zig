@@ -47,15 +47,14 @@ fn Init(comptime T: type) fn () T {
     }.init;
 }
 
-fn SetPresent(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T)) void {
+fn SetPresent(comptime T: type) fn (*T, comptime types.FieldEnum(T)) void {
     return struct {
-        const FieldEnum = std.meta.FieldEnum(T);
-        pub fn setPresent(self: *T, comptime field_enum: std.meta.FieldEnum(T)) void {
+        pub fn setPresent(self: *T, comptime field_enum: types.FieldEnum(T)) void {
             const tagname = @tagName(field_enum);
             const name = T.descriptor.name;
             if (comptime mem.eql(u8, "base", tagname))
                 compileErr("{s}.setPresent() field_enum == .base", .{name});
-            const field_idx = std.meta.fieldIndex(T, tagname) orelse
+            const field_idx = types.fieldIndex(T, tagname) orelse
                 compileErr("{s}.setPresent() invalid field name {s}", .{ name, tagname });
             std.log.debug("setPresent() {s}.{s}:{}", .{ name, @tagName(field_enum), field_idx });
             self.base.setPresentFieldIndex(field_idx - 1);
@@ -63,15 +62,14 @@ fn SetPresent(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T)) void {
     }.setPresent;
 }
 
-fn Has(comptime T: type) fn (T, comptime std.meta.FieldEnum(T)) bool {
+fn Has(comptime T: type) fn (T, comptime types.FieldEnum(T)) bool {
     return struct {
-        const FieldEnum = std.meta.FieldEnum(T);
-        pub fn has(self: T, comptime field_enum: std.meta.FieldEnum(T)) bool {
+        pub fn has(self: T, comptime field_enum: types.FieldEnum(T)) bool {
             const tagname = @tagName(field_enum);
             const name = comptime T.descriptor.name.slice();
             if (comptime mem.eql(u8, "base", tagname))
                 compileErr("{s}.Has() field_enum == .base", .{name});
-            const field_idx = std.meta.fieldIndex(T, tagname) orelse
+            const field_idx = types.fieldIndex(T, tagname) orelse
                 compileErr("{s}.Has() invalid field name {s}", .{ name, tagname });
             const field_id = T.field_ids[field_idx - 1];
             std.log.debug(
@@ -83,15 +81,51 @@ fn Has(comptime T: type) fn (T, comptime std.meta.FieldEnum(T)) bool {
     }.has;
 }
 
-fn SetField(comptime T: type) fn (*T, comptime std.meta.FieldEnum(T), anytype) void {
+pub fn UnionField(comptime T: type, comptime field_name: []const u8) type {
+    const fe = std.meta.FieldEnum(T);
+    return for (std.meta.tags(fe)) |tag| {
+        if (mem.eql(u8, @tagName(tag), field_name))
+            break std.meta.FieldType(T, tag);
+    } else compileErr("field_name '{s}' not found", .{field_name});
+}
+
+pub fn setFieldHelp(
+    comptime T: type,
+    self: *T,
+    comptime field_enum: types.FieldEnum(T),
+    value: anytype,
+) void {
+    self.setPresent(field_enum);
+    const tagname = @tagName(field_enum);
+    std.log.debug("setFieldHelp() .{s}={}", .{ tagname, value });
+    const field = types.fields(T)[@enumToInt(field_enum)];
+    const F = field.ty();
+    if (field == .union_field) {
+        const i = comptime mem.indexOf(u8, tagname, "__") orelse unreachable;
+        const prefix = tagname[0..i];
+        const U = UnionField(T, prefix);
+        @field(self, prefix) =
+            @unionInit(U, tagname[i + 2 ..], @as(F, value));
+    } else @field(self, tagname) = @as(F, value);
+}
+
+pub fn getFieldHelp(
+    comptime T: type,
+    self: T,
+    comptime field_enum: types.FieldEnum(T),
+) types.fieldInfo(T, field_enum).ty() {
+    const tagname = @tagName(field_enum);
+    std.log.debug("getFieldHelp() .{s}", .{tagname});
+    if (comptime mem.indexOf(u8, tagname, "__")) |i| {
+        const u = @field(self, tagname[0..i]);
+        return @field(u, tagname[i + 2 ..]);
+    } else return @field(self, tagname);
+}
+
+fn SetField(comptime T: type) fn (*T, comptime types.FieldEnum(T), anytype) void {
     return struct {
-        const FieldEnum = std.meta.FieldEnum(T);
-        pub fn setField(self: *T, comptime field_enum: std.meta.FieldEnum(T), value: anytype) void {
-            self.setPresent(field_enum);
-            const tagname = @tagName(field_enum);
-            std.log.debug("setField() .{s}={}", .{ tagname, value });
-            const F = std.meta.fieldInfo(T, field_enum).type;
-            @field(self, tagname) = @as(F, value);
+        pub fn setField(self: *T, comptime field_enum: types.FieldEnum(T), value: anytype) void {
+            setFieldHelp(T, self, field_enum, value);
         }
     }.setField;
 }
@@ -400,8 +434,8 @@ pub const MessageDescriptor = extern struct {
                 i += 1;
             }
 
-            if (fields.len != 0 and oneof_field_ids.len <= 1) {
-                // TODO verify total size when oneof_field_ids.len > 1
+            // TODO verify total size when oneof_field_ids.len != 0
+            if (fields.len != 0 and oneof_field_ids.len == 0) {
                 fields_total_size += sizeof_message - fields.items[fields.len - 1].offset;
                 if (fields_total_size != sizeof_message) {
                     compileErr(
@@ -646,6 +680,7 @@ pub const Message = extern struct {
     fn isPointerField(f: FieldDescriptor) bool {
         return f.label == .LABEL_REPEATED or
             f.type == .TYPE_STRING or
+            f.type == .TYPE_BYTES or
             f.type == .TYPE_MESSAGE;
     }
 

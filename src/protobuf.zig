@@ -416,8 +416,8 @@ fn parseOneofMember(
     );
     for (oneofids_group.slice()) |oneof_id| {
         if (message.hasFieldId(oneof_id)) {
-            todo("free oneof field_id {}", .{oneof_id});
             message.setPresentValue(oneof_id, false);
+            std.log.warn("TODO free oneof field_id {}", .{oneof_id});
         }
     }
 
@@ -684,10 +684,23 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
     errdefer message.deinit(ctx.allocator);
 
     const desc_fields = desc.fields.slice();
-    var last_field: ?*const FieldDescriptor = &desc_fields[0];
-    var last_field_index: u7 = 0;
-    // TODO make this dynamic to allow for larger structs
-    var required_fields_bitmap = std.StaticBitSet(128).initEmpty();
+    var last_field: ?*const FieldDescriptor = if (desc_fields.len > 0)
+        &desc_fields[0]
+    else
+        null;
+
+    const req_fields_bitmap_bitlength = @bitSizeOf(usize) * 4;
+    const req_fields_bitmap_size = @sizeOf(std.DynamicBitSetUnmanaged) +
+        req_fields_bitmap_bitlength;
+    var sfa0 = std.heap.stackFallback(req_fields_bitmap_size, ctx.allocator);
+    const sfa0_alloc = sfa0.get();
+    var req_fields_bitmap = try std.DynamicBitSetUnmanaged.initEmpty(
+        sfa0_alloc,
+        req_fields_bitmap_bitlength,
+    );
+    defer req_fields_bitmap.deinit(sfa0_alloc);
+
+    var last_field_index: u32 = 0;
     var n_unknown: u32 = 0;
     try verifyMessageType(desc.magic, types.MESSAGE_DESCRIPTOR_MAGIC);
 
@@ -736,7 +749,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                 );
                 mfield = &desc_fields[field_index];
                 last_field = mfield;
-                last_field_index = @intCast(u7, field_index);
+                last_field_index = @intCast(u32, field_index);
             } else |_| {
                 std.log.debug("(scan) field_id {} not found", .{key.field_id});
                 mfield = null;
@@ -748,8 +761,8 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
             if (field.label == .LABEL_REQUIRED)
                 // TODO make a message.requiredFieldIndex(field_index) method
                 // which ignores optional fields, allowing
-                // required_fields_bitmap to be smaller
-                required_fields_bitmap.set(last_field_index);
+                // req_fields_bitmap to be smaller
+                req_fields_bitmap.set(last_field_index);
         }
 
         var sm: ScannedMember = .{ .key = key, .field = mfield, .data = ctx.data };
@@ -843,7 +856,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
             }
         } else if (field.label == .LABEL_REQUIRED) {
             if (field.default_value == null and
-                !required_fields_bitmap.isSet(i))
+                !req_fields_bitmap.isSet(i))
             {
                 std.log.warn(
                     "message {s}: missing required field {s}",
