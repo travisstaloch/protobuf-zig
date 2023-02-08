@@ -153,3 +153,23 @@ test "conf Required.Proto3.ProtobufInput.ValidDataMap.STRING.MESSAGE.MergeValue.
     _ = nested;
     // try testing.expect(nested.has(.corecursive));
 }
+
+test "conf Required.Proto3.ProtobufInput.UnknownVarint.ProtobufOutput" {
+    const input = "a81f01";
+    const m = try pb.testing.deserializeHexBytesHelper(
+        test3.TestAllTypesProto3,
+        input,
+        talloc,
+    );
+    defer m.base.deinit(talloc);
+    var buf = std.ArrayList(u8).init(talloc);
+    defer buf.deinit();
+    try pb.protobuf.serialize(&m.base, buf.writer());
+    const hex = try std.fmt.allocPrint(
+        talloc,
+        "{}",
+        .{std.fmt.fmtSliceHexLower(buf.items)},
+    );
+    defer talloc.free(hex);
+    try testing.expectEqualSlices(u8, input, hex);
+}

@@ -110,6 +110,7 @@ pub fn repeatedEleSize(t: FieldDescriptorProto.Type) u8 {
         .TYPE_FIXED32,
         .TYPE_FLOAT,
         .TYPE_ENUM,
+        .TYPE_BOOL,
         => 4,
         .TYPE_SINT64,
         .TYPE_INT64,
@@ -118,7 +119,6 @@ pub fn repeatedEleSize(t: FieldDescriptorProto.Type) u8 {
         .TYPE_FIXED64,
         .TYPE_DOUBLE,
         => 8,
-        .TYPE_BOOL => @sizeOf(u32),
         .TYPE_STRING, .TYPE_BYTES => @sizeOf(pb.extern_types.String),
         .TYPE_MESSAGE => @sizeOf(*Message),
         .TYPE_ERROR, .TYPE_GROUP => unreachable,
@@ -145,6 +145,7 @@ const Ctx = struct {
         return res;
     }
 
+    // TODO maybe remove this, store fbs in ctx instead of recreating it?
     pub fn fbs(ctx: Ctx) std.io.FixedBufferStream([]const u8) {
         return std.io.fixedBufferStream(ctx.data);
     }
@@ -162,10 +163,8 @@ const Ctx = struct {
         return top_level.deserialize(mdesc, ctx);
     }
 
-    // Reads a varint from the reader and returns the value, eos (end of steam) pair.
-    // `mode = .sint` should used for sint32 and sint64 decoding when expecting lots of negative numbers as it
-    // uses zig zag encoding to reduce the size of negative values. negatives encoded otherwise (with `mode = .int`)
-    // will require extra size (10 bytes each) and are inefficient.
+    /// Read a varint from the ctx.data and returns the value. updates ctx,
+    /// skipping the read bytes
     pub fn readVarint128(ctx: *Ctx, comptime T: type, comptime mode: IntMode) !T {
         var ctxfbs = ctx.fbs();
         const reader = ctxfbs.reader();
@@ -192,13 +191,8 @@ const Ctx = struct {
     }
 };
 
-fn structMemberP(message: *Message, offset: usize) [*]u8 {
-    const bytes = @ptrCast([*]u8, message);
-    return bytes + offset;
-}
-
 fn structMemberPtr(comptime T: type, message: *Message, offset: usize) *T {
-    return ptrAlignCast(*T, structMemberP(message, offset));
+    return ptrAlignCast(*T, @ptrCast([*]u8, message) + offset);
 }
 
 fn genericMessageInit(desc: *const MessageDescriptor) Message {
@@ -210,7 +204,7 @@ fn genericMessageInit(desc: *const MessageDescriptor) Message {
             .{ field.name, ptrfmt(field.default_value), @tagName(field.label) },
         );
         if (field.default_value != null and field.label != .LABEL_REPEATED) {
-            var field_bytes = structMemberP(&message, field.offset);
+            var field_bytes = @ptrCast([*]u8, &message) + field.offset;
             const default = @ptrCast([*]const u8, field.default_value);
             switch (field.type) {
                 .TYPE_INT32,
@@ -515,6 +509,7 @@ fn parseRequiredMember(
                 listAppend(member, ListMut(u32), int);
             } else mem.writeIntLittle(u32, member[0..4], int);
         },
+        // TODO merge. same as previous case
         .TYPE_SINT32 => {
             if (wire_type != .VARINT) return error.FieldMissing;
             const int = try scanned_member.readVarint128(u32, .sint);
@@ -547,6 +542,7 @@ fn parseRequiredMember(
                 listAppend(member, ListMut(u64), int);
             } else mem.writeIntLittle(u64, member[0..8], int);
         },
+        // TODO merge. same as previous case
         .TYPE_SINT64 => {
             if (wire_type != .VARINT) return error.FieldMissing;
             const int = try scanned_member.readVarint128(u64, .sint);
@@ -629,10 +625,12 @@ fn parseMember(
         ufield.* = .{
             .key = scanned_member.key,
             .data = String.init(try ctx.allocator.dupe(u8, scanned_member.data)),
+            // [0 .. scanned_member.data.len - scanned_member.prefix_len]
         };
-        std.log.debug("unknown field data {}:'{}'", .{
+        std.log.debug("unknown field data {}:'{}' prefix_len {}", .{
             ufield.data.len,
             std.fmt.fmtSliceHexLower(ufield.data.slice()),
+            scanned_member.prefix_len,
         });
         message.unknown_fields.appendAssumeCapacity(ufield);
         return;
@@ -642,7 +640,7 @@ fn parseMember(
         "parseMember() '{s}' .{s} .{s} ",
         .{ field.name, @tagName(field.label), @tagName(field.type) },
     );
-    var member = structMemberP(message, field.offset);
+    var member = @ptrCast([*]u8, message) + field.offset;
     return switch (field.label) {
         .LABEL_REQUIRED => parseRequiredMember(scanned_member, member, message, ctx, true),
         .LABEL_OPTIONAL, .LABEL_NONE => if (flagsContain(field.flags, .FLAG_ONEOF))
@@ -784,7 +782,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
             .VARINT => {
                 const startlen = ctx.data.len;
                 _ = try ctx.readVarint128(usize, .int);
-                sm.data.len += startlen - ctx.data.len;
+                sm.data.len = startlen - ctx.data.len;
             },
             .I64 => {
                 if (ctx.data.len < 8) {
