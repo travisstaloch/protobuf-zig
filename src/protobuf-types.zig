@@ -500,7 +500,7 @@ pub const Message = extern struct {
     pub fn setPresent(m: *Message, field_id: c_uint) void {
         const desc = m.descriptor orelse
             @panic("called setPresent() on a message with no descriptor.");
-        std.log.debug("setPresent({}) - {any}", .{ field_id, desc.opt_field_ids });
+        std.log.debug("setPresent({})", .{field_id});
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse return;
         m.optional_fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx);
         std.log.debug("setPresent 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
@@ -512,7 +512,7 @@ pub const Message = extern struct {
     pub fn setPresentValue(m: *Message, field_id: c_uint, value: bool) void {
         const desc = m.descriptor orelse
             @panic("called setPresentValue() on a message with no descriptor.");
-        std.log.debug("setPresentValue({}) - {any}", .{ field_id, desc.opt_field_ids });
+        std.log.debug("setPresentValue({}, {})", .{ field_id, value });
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse return;
         if (value)
             m.optional_fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx)

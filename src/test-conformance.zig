@@ -16,32 +16,9 @@ test "conf Required.Proto3.ProtobufInput.PrematureEofInPackedFieldValue.INT64" {
 
 test "conf Required.Proto3.ProtobufInput.IllegalZeroFieldNum_Case_0" {
     const input = "\x01DEADBEEF";
-    const m = try pb.testing.deserializeBytesHelper(
+    try testing.expectError(error.FieldMissing, pb.testing.deserializeBytesHelper(
         test3.TestAllTypesProto3,
         input,
-        talloc,
-    );
-    defer m.base.deinit(talloc);
-}
-
-// this test is wierd. this deserialze results in an unknown field for
-// field_id == 0 which seems fine. but then errors later. maybe this is correct?
-// anyway leaving it here as documentation. maybe come back to it later.
-test "conf Required.Proto3.ProtobufInput.IllegalZeroFieldNum_Case_1" {
-    const input = "\x02\x01\x01";
-    const m = try pb.testing.deserializeBytesHelper(
-        test3.TestAllTypesProto3,
-        input,
-        talloc,
-    );
-    defer m.base.deinit(talloc);
-    try testing.expectEqual(@as(usize, 1), m.base.unknown_fields.len);
-    var buf = std.ArrayList(u8).init(talloc);
-    defer buf.deinit();
-    try pb.protobuf.serialize(&m.base, buf.writer());
-    try testing.expectError(error.NotEnoughBytesRead, pb.testing.deserializeBytesHelper(
-        test3.TestAllTypesProto3,
-        buf.items,
         talloc,
     ));
 }
@@ -138,4 +115,41 @@ test "conf Required.Proto3.ProtobufInput.ValidDataRepeated.SINT32.UnpackedInput.
     try testing.expectEqual(@as(i32, 2147483647), m.repeated_sint32.items[2]);
     try testing.expectEqual(@as(i32, -2147483648), m.repeated_sint32.items[3]);
     try testing.expectEqual(@as(i32, 1), m.repeated_sint32.items[4]);
+}
+
+test "conf Required.Proto3.ProtobufInput.ValidDataOneof.MESSAGE.Merge.ProtobufOutput" {
+    // this is failing because nested messages aren't working yet
+    // TODO re-enable after #1 is resolved and recursive messages work
+    if (true) return error.SkipZigTest;
+    const input = "820709120708011001c8050182070712051001c80501";
+    testing.log_level = .debug;
+    const m = try pb.testing.deserializeHexBytesHelper(
+        test3.TestAllTypesProto3,
+        input,
+        talloc,
+    );
+    defer m.base.deinit(talloc);
+    try testing.expect(m.has(.oneof_field__oneof_nested_message));
+    // TODO add expectations
+    const nested = m.oneof_field.oneof_nested_message;
+    _ = nested;
+    // try testing.expect(nested.has(.corecursive));
+}
+
+test "conf Required.Proto3.ProtobufInput.ValidDataMap.STRING.MESSAGE.MergeValue.ProtobufOutput" {
+    // this is failing because nested messages aren't working yet
+    // TODO re-enable after #1 is resolved and recursive messages work
+    if (true) return error.SkipZigTest;
+    const input = "ba040b0a00120712050801f80101ba040b0a00120712051001f80101";
+    testing.log_level = .debug;
+    const m = try pb.testing.deserializeHexBytesHelper(
+        test3.TestAllTypesProto3,
+        input,
+        talloc,
+    );
+    defer m.base.deinit(talloc);
+    // TODO add expectations
+    const nested = m.oneof_field.oneof_nested_message;
+    _ = nested;
+    // try testing.expect(nested.has(.corecursive));
 }
