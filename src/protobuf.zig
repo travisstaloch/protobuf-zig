@@ -49,6 +49,7 @@ pub const Error = std.mem.Allocator.Error ||
 /// `mode = .int`).  will require extra size (10 bytes each) and are
 /// inefficient.
 /// adapted from https://github.com/mlugg/zigpb/blob/main/protobuf.zig#decodeVarInt()
+/// zigzag notes: https://gist.github.com/mfuerstenau/ba870a29e16536fdbaba
 pub fn readVarint128(comptime T: type, reader: anytype, comptime mode: IntMode) !T {
     var shift: u7 = 0;
     var value: u128 = 0;
@@ -59,8 +60,10 @@ pub fn readVarint128(comptime T: type, reader: anytype, comptime mode: IntMode) 
         shift += 7;
     }
     if (mode == .sint) {
-        const svalue = @bitCast(i128, value);
-        value = @bitCast(u128, (svalue >> 1) ^ (-(svalue & 1)));
+        const U = std.meta.Int(.unsigned, @bitSizeOf(T));
+        const S = std.meta.Int(.signed, @bitSizeOf(T));
+        const v = @truncate(U, value);
+        return (v >> 1) ^ @bitCast(U, -@bitCast(S, v & 1));
     }
     return switch (@typeInfo(T).Int.signedness) {
         .signed => @truncate(T, @bitCast(i128, value)),

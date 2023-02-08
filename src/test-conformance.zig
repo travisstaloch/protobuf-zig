@@ -110,3 +110,32 @@ test "conf Required.Proto3.ProtobufInput.ValidDataRepeated.BOOL.PackedInput.Prot
     try testing.expectEqual(false, m.repeated_bool.items[5]);
     try testing.expectEqual(false, m.repeated_bool.items[6]);
 }
+
+test "conf Required.Proto3.ProtobufInput.RepeatedScalarSelectsLast.SINT32.ProtobufOutput" {
+    const input = "280028f2c00128feffffff0f28ffffffff0f288280808010";
+    const m = try pb.testing.deserializeHexBytesHelper(
+        test3.TestAllTypesProto3,
+        input,
+        talloc,
+    );
+    defer m.base.deinit(talloc);
+    try testing.expect(m.has(.optional_sint32));
+    try testing.expectEqual(@as(i32, 1), m.optional_sint32);
+}
+
+test "conf Required.Proto3.ProtobufInput.ValidDataRepeated.SINT32.UnpackedInput.ProtobufOutput" {
+    const input = "9802009802f2c0019802feffffff0f9802ffffffff0f98028280808010";
+    const m = try pb.testing.deserializeHexBytesHelper(
+        test3.TestAllTypesProto3,
+        input,
+        talloc,
+    );
+    defer m.base.deinit(talloc);
+    try testing.expect(m.has(.repeated_sint32));
+    try testing.expectEqual(@as(usize, 5), m.repeated_sint32.len);
+    try testing.expectEqual(@as(i32, 0), m.repeated_sint32.items[0]);
+    try testing.expectEqual(@as(i32, 12345), m.repeated_sint32.items[1]);
+    try testing.expectEqual(@as(i32, 2147483647), m.repeated_sint32.items[2]);
+    try testing.expectEqual(@as(i32, -2147483648), m.repeated_sint32.items[3]);
+    try testing.expectEqual(@as(i32, 1), m.repeated_sint32.items[4]);
+}
