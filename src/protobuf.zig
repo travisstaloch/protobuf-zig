@@ -628,6 +628,10 @@ fn parseMember(
             .key = scanned_member.key,
             .data = String.init(try ctx.allocator.dupe(u8, scanned_member.data)),
         };
+        std.log.debug("unknown field data {}:'{}'", .{
+            ufield.data.len,
+            std.fmt.fmtSliceHexLower(ufield.data.slice()),
+        });
         message.unknown_fields.appendAssumeCapacity(ufield);
         return;
     };
@@ -874,6 +878,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
     if (missing_any_required) return error.RequiredFieldMissing;
     assert(ctx.data.len == 0);
 
+    // TODO consider not allowing unknown fields. return error.InvalidKey;
     if (n_unknown > 0)
         try message.unknown_fields.ensureTotalCapacity(ctx.allocator, n_unknown);
 
@@ -956,6 +961,7 @@ fn encodeRepeatedPacked(
         }
     }
 }
+
 fn encodeRepeatedField(
     message: *const Message,
     field: FieldDescriptor,
@@ -963,6 +969,7 @@ fn encodeRepeatedField(
     writer: anytype,
 ) Error!void {
     const list = ptrAlignCast(*const List(u8), member);
+    if (list.len == 0) return;
     std.log.debug(
         "encodeRepeatedField() '{s}' .{s} .{s} list.len={}",
         .{ field.name, field.type.tagName(), field.label.tagName(), list.len },
@@ -989,11 +996,11 @@ fn encodeOneofField(
     member: [*]const u8,
     writer: anytype,
 ) Error!void {
+    if (!message.hasFieldId(field.id)) return;
     std.log.debug(
         "encodeOneofField() .{s} .{s}",
         .{ field.type.tagName(), field.label.tagName() },
     );
-    if (!message.hasFieldId(field.id)) return;
     if (field.type == .TYPE_MESSAGE or
         field.type == .TYPE_STRING)
     {
@@ -1099,8 +1106,13 @@ fn encodeUnknownField(
     writer: anytype,
 ) Error!void {
     _ = message;
-    _ = writer;
-    todo("encodeUnknownField() .{}", .{ufield.key});
+    std.log.debug(
+        "encodeRequiredField() key wite_type=.{s} field_id={} data.len={}",
+        .{ @tagName(ufield.key.wire_type), ufield.key.field_id, ufield.data.len },
+    );
+
+    try writeVarint128(usize, ufield.key.encode(), writer, .int);
+    _ = try writer.write(ufield.data.slice());
 }
 
 pub fn serialize(message: *const Message, writer: anytype) Error!void {
