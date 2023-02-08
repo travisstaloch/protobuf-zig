@@ -131,11 +131,14 @@ fn runTest(allr: Allocator, request: *Request) !Response {
         const all_failures: []const []const u8 = &.{};
         failure_set.setPresent(.failure);
         for (all_failures) |f| {
-            try failure_set.failure.append(allr, f);
+            try failure_set.failure.append(allr, String.init(f));
         }
         var output = std.ArrayList(u8).init(allr);
         try pb.protobuf.serialize(&failure_set.base, output.writer());
-        response.set(.result__skipped, String.init("Empty failure set"));
+        if (all_failures.len == 0)
+            response.set(.result__skipped, String.init("Empty failure set"))
+        else
+            response.set(.result__protobuf_payload, String.init(output.items));
     } else if (std.mem.eql(u8, request.message_type.slice(), "protobuf_test_messages.proto2.TestAllTypesProto2")) {
         response.set(.result__skipped, String.init("proto2"));
     } else {

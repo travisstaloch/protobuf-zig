@@ -400,10 +400,7 @@ fn parseOneofMember(
                 .{ oneof_id, descriptor.field_ids },
                 error.FieldMissing,
             );
-            std.log.debug(
-                "oneof_id {} field_ids {}",
-                .{ oneof_id, descriptor.field_ids },
-            );
+            std.log.debug("found existing oneof_id {} ", .{oneof_id});
             const old_field = descriptor.fields.items[field_idx];
             const ele_size = repeatedEleSize(old_field.type);
             switch (old_field.type) {
@@ -753,6 +750,9 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
             @tagName(key.wire_type),
             key.field_id,
         });
+        // proto2/3 field numbers start at 1
+        if (key.field_id == 0) return error.FieldMissing;
+
         var mfield: ?*const FieldDescriptor = null;
         if (last_field == null or last_field.?.id != key.field_id) {
             if (intRangeLookup(desc.field_ids, key.field_id)) |field_index| {
