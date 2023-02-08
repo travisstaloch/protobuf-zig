@@ -21,6 +21,11 @@ pub fn build(b: *std.build.Builder) !void {
         "gen-format",
         "The output format of generated code.",
     ) orelse .zig;
+    const test_filter = b.option(
+        []const u8,
+        "test-filter",
+        "A filter for tests",
+    ) orelse "";
 
     const protobuf_mod = b.createModule(.{
         .source_file = .{ .path = "src/lib.zig" },
@@ -92,6 +97,7 @@ pub fn build(b: *std.build.Builder) !void {
     });
     main_tests.step.dependOn(b.getInstallStep());
     main_tests.step.dependOn(&gen_step.step);
+    main_tests.setFilter(test_filter);
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);
