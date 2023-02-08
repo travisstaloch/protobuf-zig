@@ -50,20 +50,20 @@ pub const Error = std.mem.Allocator.Error ||
 /// inefficient.
 /// adapted from https://github.com/mlugg/zigpb/blob/main/protobuf.zig#decodeVarInt()
 pub fn readVarint128(comptime T: type, reader: anytype, comptime mode: IntMode) !T {
-    var shift: u6 = 0;
-    var value: u64 = 0;
+    var shift: u7 = 0;
+    var value: u128 = 0;
     while (true) {
         const b = try reader.readByte();
-        value |= @as(u64, @truncate(u7, b)) << shift;
+        value |= @as(u128, @truncate(u7, b)) << shift;
         if (b >> 7 == 0) break;
         shift += 7;
     }
     if (mode == .sint) {
-        const svalue = @bitCast(i64, value);
-        value = @bitCast(u64, (svalue >> 1) ^ (-(svalue & 1)));
+        const svalue = @bitCast(i128, value);
+        value = @bitCast(u128, (svalue >> 1) ^ (-(svalue & 1)));
     }
     return switch (@typeInfo(T).Int.signedness) {
-        .signed => @truncate(T, @bitCast(i64, value)),
+        .signed => @truncate(T, @bitCast(i128, value)),
         .unsigned => @truncate(T, value),
     };
 }
@@ -555,7 +555,7 @@ fn parseRequiredMember(
         },
         .TYPE_BOOL => {
             if (wire_type != .VARINT) return error.FieldMissing;
-            const int = try scanned_member.readVarint128(u8, .int);
+            const int = @boolToInt(try scanned_member.readVarint128(u64, .int) != 0);
             std.log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(u8), int);

@@ -45,3 +45,48 @@ test "conf Required.Proto3.ProtobufInput.IllegalZeroFieldNum_Case_1" {
         talloc,
     ));
 }
+
+test "conf Required.Proto3.ProtobufInput.ValidDataScalar.BOOL[4].ProtobufOutput" {
+    const input = "688080808020";
+    const m = try pb.testing.deserializeHexBytesHelper(
+        test3.TestAllTypesProto3,
+        input,
+        talloc,
+    );
+    defer m.base.deinit(talloc);
+    try testing.expect(m.has(.optional_bool));
+    try testing.expect(m.optional_bool);
+    var buf = std.ArrayList(u8).init(talloc);
+    defer buf.deinit();
+    try pb.protobuf.serialize(&m.base, buf.writer());
+    const m2 = try pb.testing.deserializeBytesHelper(
+        test3.TestAllTypesProto3,
+        buf.items,
+        talloc,
+    );
+    defer m2.base.deinit(talloc);
+    try testing.expect(m2.has(.optional_bool));
+    try testing.expect(m2.optional_bool);
+}
+test "conf Required.Proto3.ProtobufInput.RepeatedScalarSelectsLast.BOOL.ProtobufOutput" {
+    const input = "6800680168ffffffffffffffffff0168cec2f10568808080802068ffffffffffffffff7f6880808080808080808001";
+    const m = try pb.testing.deserializeHexBytesHelper(
+        test3.TestAllTypesProto3,
+        input,
+        talloc,
+    );
+    defer m.base.deinit(talloc);
+    try testing.expect(m.has(.optional_bool));
+    try testing.expect(m.optional_bool);
+    var buf = std.ArrayList(u8).init(talloc);
+    defer buf.deinit();
+    try pb.protobuf.serialize(&m.base, buf.writer());
+    const m2 = try pb.testing.deserializeBytesHelper(
+        test3.TestAllTypesProto3,
+        buf.items,
+        talloc,
+    );
+    defer m2.base.deinit(talloc);
+    try testing.expect(m2.has(.optional_bool));
+    try testing.expect(m2.optional_bool);
+}
