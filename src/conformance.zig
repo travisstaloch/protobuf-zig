@@ -30,6 +30,39 @@ fn serializeTo(serializable: anytype, writer: anytype) !void {
     try pb.protobuf.serialize(&serializable.base, writer);
 }
 
+fn debugReq(request: *Request, buf: []const u8) void {
+    const payload = if (request.has(.payload__protobuf_payload))
+        request.payload.protobuf_payload
+    else if (request.has(.payload__json_payload))
+        request.payload.json_payload
+    else if (request.has(.payload__jspb_payload))
+        request.payload.jspb_payload
+    else if (request.has(.payload__text_payload))
+        request.payload.text_payload
+    else
+        unreachable;
+
+    // TODO make helper active tag
+    const payload_tagname = if (request.has(.payload__protobuf_payload))
+        "protobuf_payload"
+    else if (request.has(.payload__json_payload))
+        "json_payload"
+    else if (request.has(.payload__jspb_payload))
+        "jspb_payload"
+    else if (request.has(.payload__text_payload))
+        "text_payload"
+    else
+        unreachable;
+
+    std.debug.print("----\n", .{});
+    std.debug.print("message_type            {s}\n", .{request.message_type});
+    std.debug.print("requested_output_format {}\n", .{request.requested_output_format});
+    std.debug.print("test_category           {}\n", .{request.test_category});
+    std.debug.print("payload                 {s} : {}({})\n", .{ payload_tagname, std.fmt.fmtSliceHexLower(payload.slice()), payload.len });
+    std.debug.print("message                 {}\n", .{std.fmt.fmtSliceHexLower(buf)});
+    std.debug.print("----\n", .{});
+}
+
 fn serveConformanceRequest() !bool {
     const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
@@ -48,7 +81,7 @@ fn serveConformanceRequest() !bool {
     buf.items.len = in_len;
     const amt = try stdin.read(buf.items);
     if (amt != in_len) return error.Amt;
-    if (debug_request) std.debug.print("message {}\n", .{std.fmt.fmtSliceHexLower(buf.items)});
+    // if (debug_request) std.debug.print("message {}\n", .{std.fmt.fmtSliceHexLower(buf.items)});
     // std.debug.print("Request {}\n", .{Request});
 
     var ctx = pb.protobuf.context(buf.items, allr);
@@ -69,50 +102,22 @@ fn serveConformanceRequest() !bool {
         return false;
     }
 
-    if (debug_request) {
-        const payload = if (request.has(.payload__protobuf_payload))
-            request.payload.protobuf_payload
-        else if (request.has(.payload__json_payload))
-            request.payload.json_payload
-        else if (request.has(.payload__jspb_payload))
-            request.payload.jspb_payload
-        else if (request.has(.payload__text_payload))
-            request.payload.text_payload
-        else
-            unreachable;
-
-        // TODO make helper active tag
-        const payload_tagname = if (request.has(.payload__protobuf_payload))
-            "protobuf_payload"
-        else if (request.has(.payload__json_payload))
-            "json_payload"
-        else if (request.has(.payload__jspb_payload))
-            "jspb_payload"
-        else if (request.has(.payload__text_payload))
-            "text_payload"
-        else
-            unreachable;
-
-        std.debug.print("----\n", .{});
-        std.debug.print("message_type            {s}\n", .{request.message_type});
-        std.debug.print("requested_output_format {}\n", .{request.requested_output_format});
-        std.debug.print("test_category           {}\n", .{request.test_category});
-        std.debug.print("payload                 {s} : {}({})\n", .{ payload_tagname, std.fmt.fmtSliceHexLower(payload.slice()), payload.len });
-        std.debug.print("----\n", .{});
-    }
-
     const response = runTest(allr, request) catch |e| {
         std.debug.print("error: runTest() {s}\n", .{@errorName(e)});
         return e;
     };
-    if (response.has(.result__runtime_error)) {
-        std.debug.print("runtime_error: {s}\n", .{response.result.runtime_error});
-    } else if (response.has(.result__serialize_error)) {
-        std.debug.print("serialize_error: {s}\n", .{response.result.serialize_error});
-    } else if (response.has(.result__parse_error)) {
-        std.debug.print("parse_error: {s}\n", .{response.result.parse_error});
+    if (debug_request) {
+        if (response.has(.result__runtime_error)) {
+            std.debug.print("runtime_error: {s}\n", .{response.result.runtime_error});
+            debugReq(request, buf.items);
+        } else if (response.has(.result__serialize_error)) {
+            std.debug.print("serialize_error: {s}\n", .{response.result.serialize_error});
+            debugReq(request, buf.items);
+        } else if (response.has(.result__parse_error)) {
+            std.debug.print("parse_error: {s}\n", .{response.result.parse_error});
+            debugReq(request, buf.items);
+        }
     }
-
     try serializeTo(response, stdout);
     return false;
 }
@@ -134,10 +139,10 @@ fn runTest(allr: Allocator, request: *Request) !Response {
     } else if (std.mem.eql(u8, request.message_type.slice(), "protobuf_test_messages.proto2.TestAllTypesProto2")) {
         response.set(.result__skipped, String.init("proto2"));
     } else {
-        var test_message = test3.TestAllTypesProto3.init();
+        var test_message: ?*pb.types.Message = null;
         if (request.has(.payload__protobuf_payload)) {
             var ctx = pb.protobuf.context(request.payload.protobuf_payload.slice(), allr);
-            _ = ctx.deserialize(test_message.base.descriptor.?) catch |e| switch (e) {
+            test_message = ctx.deserialize(&test3.TestAllTypesProto3.descriptor) catch |e| switch (e) {
                 error.EndOfStream => {
                     response.set(.result__parse_error, String.init("EOF"));
                     return response;
@@ -165,7 +170,7 @@ fn runTest(allr: Allocator, request: *Request) !Response {
             .UNSPECIFIED => return error.InvalidArgument_UnspecifiedOutputFormat,
             .PROTOBUF => {
                 var output = std.ArrayList(u8).init(allr);
-                try pb.protobuf.serialize(&test_message.base, output.writer());
+                try pb.protobuf.serialize(test_message.?, output.writer());
                 response.set(.result__protobuf_payload, String.init(try output.toOwnedSlice()));
             },
             .JSON => {
