@@ -329,6 +329,7 @@ fn parsePackedRepeatedMember(
     _: *Ctx,
 ) !void {
     const field = scanned_member.field orelse unreachable;
+    std.log.debug("parsePackedRepeatedMember() '{s}'", .{field.name});
     var fbs = std.io.fixedBufferStream(scanned_member.data);
     const reader = fbs.reader();
     while (true) {
@@ -363,6 +364,9 @@ fn parsePackedRepeatedMember(
             else => return e,
         };
     }
+    const list = ptrAlignCast(*const List(u8), member);
+    std.log.debug("parsePackedRepeatedMember() count {}", .{list.len});
+    if (list.len == 0) return error.FieldMissing;
 }
 
 fn parseOneofMember(
@@ -502,6 +506,7 @@ fn parseRequiredMember(
 
     switch (field.type) {
         .TYPE_INT32, .TYPE_UINT32, .TYPE_ENUM => {
+            if (wire_type != .VARINT) return error.FieldMissing;
             const int = try scanned_member.readVarint128(u32, .int);
             std.log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
@@ -509,6 +514,7 @@ fn parseRequiredMember(
             } else mem.writeIntLittle(u32, member[0..4], int);
         },
         .TYPE_SINT32 => {
+            if (wire_type != .VARINT) return error.FieldMissing;
             const int = try scanned_member.readVarint128(u32, .sint);
             std.log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
@@ -516,6 +522,7 @@ fn parseRequiredMember(
             } else mem.writeIntLittle(u32, member[0..4], int);
         },
         .TYPE_FIXED32, .TYPE_SFIXED32, .TYPE_FLOAT => {
+            if (wire_type != .I32) return error.FieldMissing;
             const int = mem.readIntLittle(u32, scanned_member.data[0..4]);
             std.log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
@@ -523,6 +530,7 @@ fn parseRequiredMember(
             } else mem.writeIntLittle(u32, member[0..4], int);
         },
         .TYPE_FIXED64, .TYPE_SFIXED64, .TYPE_DOUBLE => {
+            if (wire_type != .I64) return error.FieldMissing;
             const int = mem.readIntLittle(u64, scanned_member.data[0..8]);
             std.log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
@@ -530,6 +538,7 @@ fn parseRequiredMember(
             } else mem.writeIntLittle(u64, member[0..8], int);
         },
         .TYPE_INT64, .TYPE_UINT64 => {
+            if (wire_type != .VARINT) return error.FieldMissing;
             const int = try scanned_member.readVarint128(u64, .int);
             std.log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
@@ -537,6 +546,7 @@ fn parseRequiredMember(
             } else mem.writeIntLittle(u64, member[0..8], int);
         },
         .TYPE_SINT64 => {
+            if (wire_type != .VARINT) return error.FieldMissing;
             const int = try scanned_member.readVarint128(u64, .sint);
             std.log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
@@ -544,6 +554,7 @@ fn parseRequiredMember(
             } else mem.writeIntLittle(u64, member[0..8], int);
         },
         .TYPE_BOOL => {
+            if (wire_type != .VARINT) return error.FieldMissing;
             const int = try scanned_member.readVarint128(u8, .int);
             std.log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
@@ -551,8 +562,8 @@ fn parseRequiredMember(
             } else member[0] = int;
         },
         .TYPE_STRING, .TYPE_BYTES => {
+            // TODO free if existing
             if (wire_type != .LEN) return error.FieldMissing;
-
             const bytes = try ctx.allocator.dupe(u8, scanned_member.data);
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(String), String.init(bytes));
@@ -563,6 +574,7 @@ fn parseRequiredMember(
             std.log.info("{s}: '{s}'", .{ field.name, bytes });
         },
         .TYPE_MESSAGE => {
+            // TODO free if existing
             if (wire_type != .LEN) {
                 return deserializeErr(
                     "unexpected wire_type .{s}",

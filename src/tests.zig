@@ -1,6 +1,7 @@
 test {
     _ = @import("test-deserialize.zig");
     _ = @import("test-serialize.zig");
+    _ = @import("test-conformance.zig");
 }
 
 // zig test src/tests.zig --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end --pkg-end --main-pkg-path .
