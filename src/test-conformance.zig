@@ -68,6 +68,7 @@ test "conf Required.Proto3.ProtobufInput.ValidDataScalar.BOOL[4].ProtobufOutput"
     try testing.expect(m2.has(.optional_bool));
     try testing.expect(m2.optional_bool);
 }
+
 test "conf Required.Proto3.ProtobufInput.RepeatedScalarSelectsLast.BOOL.ProtobufOutput" {
     const input = "6800680168ffffffffffffffffff0168cec2f10568808080802068ffffffffffffffff7f6880808080808080808001";
     const m = try pb.testing.deserializeHexBytesHelper(
@@ -89,4 +90,23 @@ test "conf Required.Proto3.ProtobufInput.RepeatedScalarSelectsLast.BOOL.Protobuf
     defer m2.base.deinit(talloc);
     try testing.expect(m2.has(.optional_bool));
     try testing.expect(m2.optional_bool);
+}
+
+test "conf Required.Proto3.ProtobufInput.ValidDataRepeated.BOOL.PackedInput.ProtobufOutput" {
+    const input = "da02280001ffffffffffffffffff01cec2f1058080808020ffffffffffffffff7f80808080808080808001";
+    const m = try pb.testing.deserializeHexBytesHelper(
+        test3.TestAllTypesProto3,
+        input,
+        talloc,
+    );
+    defer m.base.deinit(talloc);
+    try testing.expect(m.has(.repeated_bool));
+    try testing.expectEqual(@as(usize, 7), m.repeated_bool.len);
+    try testing.expectEqual(false, m.repeated_bool.items[0]);
+    try testing.expectEqual(false, m.repeated_bool.items[1]);
+    try testing.expectEqual(false, m.repeated_bool.items[2]);
+    try testing.expectEqual(false, m.repeated_bool.items[3]);
+    try testing.expectEqual(true, m.repeated_bool.items[4]);
+    try testing.expectEqual(false, m.repeated_bool.items[5]);
+    try testing.expectEqual(false, m.repeated_bool.items[6]);
 }

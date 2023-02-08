@@ -115,7 +115,7 @@ pub fn repeatedEleSize(t: FieldDescriptorProto.Type) u8 {
         .TYPE_FIXED64,
         .TYPE_DOUBLE,
         => 8,
-        .TYPE_BOOL => @sizeOf(bool),
+        .TYPE_BOOL => @sizeOf(u32),
         .TYPE_STRING, .TYPE_BYTES => @sizeOf(pb.extern_types.String),
         .TYPE_MESSAGE => @sizeOf(*Message),
         .TYPE_ERROR, .TYPE_GROUP => unreachable,
@@ -351,7 +351,9 @@ fn parsePackedRepeatedMember(
             .TYPE_SFIXED64,
             .TYPE_DOUBLE,
             => packedReadAndListAdd(u64, reader, member, null),
-            .TYPE_BOOL => packedReadAndListAdd(u8, reader, member, .int),
+            .TYPE_BOOL => if (readVarint128(u64, reader, .int)) |rawint| {
+                listAppend(member, ListMut(u32), @boolToInt(rawint != 0));
+            } else |e| e,
             .TYPE_STRING,
             .TYPE_MESSAGE,
             .TYPE_BYTES,
