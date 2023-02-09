@@ -81,6 +81,30 @@ fn Has(comptime T: type) fn (T, comptime types.FieldEnum(T)) bool {
     }.has;
 }
 
+fn ActiveTag(comptime T: type) fn (T, comptime std.meta.FieldEnum(T)) ?types.FieldEnum(T) {
+    return struct {
+        pub fn activeTag(self: T, comptime field_enum: std.meta.FieldEnum(T)) ?types.FieldEnum(T) {
+            const utagname = @tagName(field_enum);
+            const field_info = comptime std.meta.fieldInfo(T, field_enum);
+            const field_tinfo = @typeInfo(field_info.type);
+
+            if (field_tinfo != .Union)
+                compileErr(
+                    "activeTag() expects a union field tag but '.{s}' is a '.{s}",
+                    .{ utagname, @tagName(field_tinfo) },
+                );
+            inline for (field_tinfo.Union.fields) |ufield| {
+                const fe = comptime std.meta.stringToEnum(
+                    types.FieldEnum(T),
+                    utagname ++ "__" ++ ufield.name,
+                ) orelse unreachable;
+                if (self.has(fe)) return fe;
+            }
+            return null;
+        }
+    }.activeTag;
+}
+
 pub fn UnionField(comptime T: type, comptime field_name: []const u8) type {
     const fe = std.meta.FieldEnum(T);
     return for (std.meta.tags(fe)) |tag| {
@@ -178,6 +202,7 @@ pub const reserved_words = std.ComptimeStringMap(void, .{
     .{ "initBytes", {} },
     .{ "format", {} },
     .{ "setPresent", {} },
+    .{ "activeTag", {} },
     .{ "has", {} },
     .{ "descriptor", {} },
     .{ "field_descriptors", {} },
@@ -193,6 +218,7 @@ pub fn MessageMixins(comptime Self: type) type {
         pub const setPresent = SetPresent(Self);
         pub const has = Has(Self);
         pub const set = SetField(Self);
+        pub const activeTag = ActiveTag(Self);
     };
 }
 

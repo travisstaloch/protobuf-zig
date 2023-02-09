@@ -31,29 +31,22 @@ fn serializeTo(serializable: anytype, writer: anytype) !void {
 }
 
 fn debugReq(request: *Request, buf: []const u8) void {
-    const payload = if (request.has(.payload__protobuf_payload))
-        request.payload.protobuf_payload
-    else if (request.has(.payload__json_payload))
-        request.payload.json_payload
-    else if (request.has(.payload__jspb_payload))
-        request.payload.jspb_payload
-    else if (request.has(.payload__text_payload))
-        request.payload.text_payload
-    else
-        unreachable;
+    const tag = request.activeTag(.payload) orelse unreachable;
+    const payload = switch (tag) {
+        .payload__protobuf_payload => request.payload.protobuf_payload,
+        .payload__json_payload => request.payload.json_payload,
+        .payload__jspb_payload => request.payload.jspb_payload,
+        .payload__text_payload => request.payload.text_payload,
+        else => unreachable,
+    };
 
-    // TODO make helper active tag
-    const payload_tagname = if (request.has(.payload__protobuf_payload))
-        "protobuf_payload"
-    else if (request.has(.payload__json_payload))
-        "json_payload"
-    else if (request.has(.payload__jspb_payload))
-        "jspb_payload"
-    else if (request.has(.payload__text_payload))
-        "text_payload"
-    else
-        unreachable;
-
+    const payload_tagname = switch (tag) {
+        .payload__protobuf_payload => "protobuf_payload",
+        .payload__json_payload => "json_payload",
+        .payload__jspb_payload => "jspb_payload",
+        .payload__text_payload => "text_payload",
+        else => unreachable,
+    };
     std.debug.print("----\n", .{});
     std.debug.print("message_type            {s}\n", .{request.message_type});
     std.debug.print("requested_output_format {}\n", .{request.requested_output_format});
@@ -89,15 +82,8 @@ fn serveConformanceRequest() !bool {
     const request = try request_m.as(Request);
     if (!request.has(.payload__protobuf_payload)) {
         var response = cf.ConformanceResponse.init();
-        // TODO make helper for finding active union tag
-        const tagname = inline for (comptime std.meta.fieldNames(@TypeOf(request.payload))) |name| {
-            const tag = comptime std.meta.stringToEnum(
-                pb.types.FieldEnum(Request),
-                "payload__" ++ name,
-            ) orelse unreachable;
-            if (request.has(tag)) break @tagName(tag);
-        } else unreachable;
-        response.set(.result__skipped, String.init(tagname));
+        const active_tag = request.activeTag(.payload) orelse unreachable;
+        response.set(.result__skipped, String.init(@tagName(active_tag)));
         try serializeTo(response, stdout);
         return false;
     }
@@ -107,16 +93,21 @@ fn serveConformanceRequest() !bool {
         return e;
     };
     if (debug_request) {
-        if (response.has(.result__runtime_error)) {
-            std.debug.print("runtime_error: {s}\n", .{response.result.runtime_error});
-            debugReq(request, buf.items);
-        } else if (response.has(.result__serialize_error)) {
-            std.debug.print("serialize_error: {s}\n", .{response.result.serialize_error});
-            debugReq(request, buf.items);
-        } else if (response.has(.result__parse_error)) {
-            std.debug.print("parse_error: {s}\n", .{response.result.parse_error});
-            debugReq(request, buf.items);
-        }
+        if (response.activeTag(.result)) |tag| switch (tag) {
+            .result__runtime_error => {
+                std.debug.print("runtime_error: {s}\n", .{response.result.runtime_error});
+                debugReq(request, buf.items);
+            },
+            .result__serialize_error => {
+                std.debug.print("serialize_error: {s}\n", .{response.result.serialize_error});
+                debugReq(request, buf.items);
+            },
+            .result__parse_error => {
+                std.debug.print("parse_error: {s}\n", .{response.result.parse_error});
+                debugReq(request, buf.items);
+            },
+            else => {},
+        };
     }
     try serializeTo(response, stdout);
     return false;
@@ -148,32 +139,37 @@ fn runTest(allr: Allocator, request: *Request) !Response {
         response.set(.result__skipped, String.init("proto2"));
     } else {
         var test_message: ?*pb.types.Message = null;
-        if (request.has(.payload__protobuf_payload)) {
-            var ctx = pb.protobuf.context(request.payload.protobuf_payload.slice(), allr);
-            test_message = ctx.deserialize(&test3.TestAllTypesProto3.descriptor) catch |e| switch (e) {
-                error.EndOfStream => {
-                    response.set(.result__parse_error, String.init("EOF"));
-                    return response;
-                },
-                else => {
-                    // std.debug.print("test_message.deserialize error {s}\n", .{@errorName(e)});
-                    response.set(.result__parse_error, String.init(@errorName(e)));
-                    return response;
-                },
-            };
-        } else if (request.has(.payload__json_payload)) {
-            response.set(.result__skipped, String.init("TODO json_payload"));
-            return response;
-            // var tokens = std.json.TokenStream.init(request.payload.json_payload);
-            // test_message = try std.json.parse(test3.TestAllTypesProto3, &tokens, .{ .ignore_unknown_fields = true });
-        } else if (request.has(.payload__jspb_payload)) {
-            response.set(.result__skipped, String.init("TODO jspb_payload"));
-            return response;
-        } else if (request.has(.payload__text_payload)) {
-            response.set(.result__skipped, String.init("TODO text_payload"));
-            return response;
-        }
-
+        if (request.activeTag(.payload)) |tag| switch (tag) {
+            .payload__protobuf_payload => {
+                var ctx = pb.protobuf.context(request.payload.protobuf_payload.slice(), allr);
+                test_message = ctx.deserialize(&test3.TestAllTypesProto3.descriptor) catch |e| switch (e) {
+                    error.EndOfStream => {
+                        response.set(.result__parse_error, String.init("EOF"));
+                        return response;
+                    },
+                    else => {
+                        // std.debug.print("test_message.deserialize error {s}\n", .{@errorName(e)});
+                        response.set(.result__parse_error, String.init(@errorName(e)));
+                        return response;
+                    },
+                };
+            },
+            .payload__json_payload => {
+                response.set(.result__skipped, String.init("TODO json_payload"));
+                return response;
+                // var tokens = std.json.TokenStream.init(request.payload.json_payload);
+                // test_message = try std.json.parse(test3.TestAllTypesProto3, &tokens, .{ .ignore_unknown_fields = true });
+            },
+            .payload__jspb_payload => {
+                response.set(.result__skipped, String.init("TODO jspb_payload"));
+                return response;
+            },
+            .payload__text_payload => {
+                response.set(.result__skipped, String.init("TODO text_payload"));
+                return response;
+            },
+            else => unreachable,
+        };
         switch (request.requested_output_format) {
             .UNSPECIFIED => return error.InvalidArgument_UnspecifiedOutputFormat,
             .PROTOBUF => {
@@ -192,5 +188,6 @@ fn runTest(allr: Allocator, request: *Request) !Response {
             },
         }
     }
+
     return response;
 }
