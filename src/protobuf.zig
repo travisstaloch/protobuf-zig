@@ -214,6 +214,7 @@ fn genericMessageInit(desc: *const MessageDescriptor) Message {
                 .TYPE_FIXED32,
                 .TYPE_FLOAT,
                 .TYPE_ENUM,
+                .TYPE_BOOL,
                 => @memcpy(field_bytes, default, 4),
                 .TYPE_INT64,
                 .TYPE_SINT64,
@@ -222,7 +223,6 @@ fn genericMessageInit(desc: *const MessageDescriptor) Message {
                 .TYPE_FIXED64,
                 .TYPE_DOUBLE,
                 => @memcpy(field_bytes, default, 8),
-                .TYPE_BOOL => @memcpy(field_bytes, default, @sizeOf(bool)),
                 .TYPE_STRING,
                 .TYPE_BYTES,
                 => @memcpy(field_bytes, default, @sizeOf(String)),
@@ -509,7 +509,6 @@ fn parseRequiredMember(
                 listAppend(member, ListMut(u32), int);
             } else mem.writeIntLittle(u32, member[0..4], int);
         },
-        // TODO merge. same as previous case
         .TYPE_SINT32 => {
             if (wire_type != .VARINT) return error.FieldMissing;
             const int = try scanned_member.readVarint128(u32, .sint);
@@ -542,7 +541,6 @@ fn parseRequiredMember(
                 listAppend(member, ListMut(u64), int);
             } else mem.writeIntLittle(u64, member[0..8], int);
         },
-        // TODO merge. same as previous case
         .TYPE_SINT64 => {
             if (wire_type != .VARINT) return error.FieldMissing;
             const int = try scanned_member.readVarint128(u64, .sint);
@@ -556,7 +554,7 @@ fn parseRequiredMember(
             const int = @boolToInt(try scanned_member.readVarint128(u64, .int) != 0);
             std.log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
-                listAppend(member, ListMut(u8), int);
+                listAppend(member, ListMut(u32), int);
             } else member[0] = int;
         },
         .TYPE_STRING, .TYPE_BYTES => {
@@ -881,7 +879,6 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
     if (missing_any_required) return error.RequiredFieldMissing;
     assert(ctx.data.len == 0);
 
-    // TODO consider not allowing unknown fields. return error.InvalidKey;
     if (n_unknown > 0)
         try message.unknown_fields.ensureTotalCapacity(ctx.allocator, n_unknown);
 
@@ -929,7 +926,7 @@ fn encodeRepeatedPacked(
     var i: usize = 0;
     while (i < list.len) : (i += 1) {
         switch (field.type) {
-            .TYPE_INT32, .TYPE_UINT32, .TYPE_ENUM => {
+            .TYPE_INT32, .TYPE_UINT32, .TYPE_ENUM, .TYPE_BOOL => {
                 const int = mem.readIntLittle(u32, (list.items + i * size)[0..4]);
                 try writeVarint128(u32, int, writer, .int);
             },
@@ -945,7 +942,6 @@ fn encodeRepeatedPacked(
                 const int = mem.readIntLittle(u64, (list.items + i * size)[0..8]);
                 try writeVarint128(u64, int, writer, .int);
             },
-            .TYPE_BOOL => try writeVarint128(u8, list.items[i], writer, .int),
             .TYPE_FIXED32, .TYPE_FLOAT, .TYPE_SFIXED32 => {
                 const int = mem.readIntLittle(u32, (list.items + i * size)[0..4]);
                 try writer.writeIntLittle(u32, int);
@@ -1044,8 +1040,8 @@ fn encodeRequiredField(
         .TYPE_ENUM, .TYPE_INT32, .TYPE_UINT32 => {
             const key = Key.init(.VARINT, field.id);
             try writeVarint128(usize, key.encode(), writer, .int);
-            const value = mem.readIntLittle(i32, member[0..4]);
-            try writeVarint128(i32, value, writer, .int);
+            const value = mem.readIntLittle(u32, member[0..4]);
+            try writeVarint128(u32, value, writer, .int);
         },
         .TYPE_SINT32 => {
             const key = Key.init(.VARINT, field.id);
