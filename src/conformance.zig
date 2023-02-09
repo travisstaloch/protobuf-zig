@@ -1,7 +1,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const cf = @import("generated").conformance;
-const test3 = @import("generated").test_messages_proto3;
+const generated = @import("generated");
+const cf = generated.conformance;
+const test3 = generated.test_messages_proto3;
+const test2 = generated.test_messages_proto2;
 const Request = cf.ConformanceRequest;
 const Response = cf.ConformanceResponse;
 const pb = @import("protobuf");
@@ -135,8 +137,6 @@ fn runTest(allr: Allocator, request: *Request) !Response {
             response.set(.result__protobuf_payload, String.init(output.items));
         }
         return response;
-    } else if (std.mem.eql(u8, request.message_type.slice(), "protobuf_test_messages.proto2.TestAllTypesProto2")) {
-        response.set(.result__skipped, String.init("proto2"));
     } else {
         var test_message: ?*pb.types.Message = null;
         if (request.activeTag(.payload)) |tag| switch (tag) {

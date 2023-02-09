@@ -83,7 +83,7 @@ pub fn main() !void {
     const res = try std.ChildProcess.exec(.{
         .allocator = alloc,
         .argv = argv.items,
-        .max_output_bytes = std.math.maxInt(u16),
+        .max_output_bytes = std.math.maxInt(u32),
     });
 
     if (res.term != .Exited or res.term.Exited != 0) {

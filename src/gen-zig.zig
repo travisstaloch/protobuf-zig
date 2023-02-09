@@ -164,7 +164,7 @@ fn writeZigFieldType(
     const zig_writer = ctx.zig_file.writer();
     if (is_list) _ = try zig_writer.write("ArrayListMut(");
     switch (field.type) {
-        .TYPE_MESSAGE => try writeZigFieldTypeName("*", field, "", proto_file, zig_writer, ctx),
+        .TYPE_MESSAGE, .TYPE_GROUP => try writeZigFieldTypeName("*", field, "", proto_file, zig_writer, ctx),
         .TYPE_ENUM => try writeZigFieldTypeName("", field, "", proto_file, zig_writer, ctx),
         else => _ = try zig_writer.write(scalarFieldZigTypeName(field)),
     }
@@ -257,7 +257,7 @@ pub fn genMessage(
         if (field.label == .LABEL_REPEATED) {
             _ = try zig_writer.write(".{}");
         } else switch (field.type) {
-            .TYPE_ENUM, .TYPE_MESSAGE => _ = try zig_writer.write("undefined"),
+            .TYPE_ENUM, .TYPE_MESSAGE, .TYPE_GROUP => _ = try zig_writer.write("undefined"),
             else => _ = try zig_writer.write(scalarFieldZigDefault(field)),
         }
         _ = try zig_writer.write(",\n");
@@ -286,6 +286,8 @@ pub fn genMessage(
             switch (field.type) {
                 .TYPE_ENUM => //
                 try zig_writer.print(" = .{s};\n", .{field.default_value}),
+                .TYPE_STRING, .TYPE_BYTES => //
+                try zig_writer.print(" = String.init(\"{s}\");\n", .{field.default_value}),
                 else => //
                 try zig_writer.print(" = {s};\n", .{field.default_value}),
             }
