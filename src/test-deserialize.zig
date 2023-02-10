@@ -228,3 +228,26 @@ test "free oneof field when overwritten" {
     const m = try ctx.deserialize(&T.descriptor);
     defer m.deinit(talloc);
 }
+
+test "deser group" {
+    const group = @import("generated").group;
+    const T = group.Grouped;
+
+    const message = comptime encodeMessage(.{
+        Key.init(.SGROUP, 201), // Group.Data .SGROUP
+        Key.init(.VARINT, 202), // Group.Data.group_int32
+        202,
+        Key.init(.VARINT, 203), // Group.Data.group_uint32
+        203,
+        Key.init(.EGROUP, 201), // Group.Data .EGROUP
+    });
+    var ctx = protobuf.context(message, talloc);
+    const m = try ctx.deserialize(&T.descriptor);
+    defer m.deinit(talloc);
+    const g = try m.as(T);
+    try testing.expect(g.has(.data));
+    try testing.expect(g.data.has(.group_int32));
+    try testing.expectEqual(@as(i32, 202), g.data.group_int32);
+    try testing.expect(g.data.has(.group_uint32));
+    try testing.expectEqual(@as(u32, 203), g.data.group_uint32);
+}

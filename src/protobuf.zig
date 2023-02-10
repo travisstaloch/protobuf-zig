@@ -120,8 +120,8 @@ pub fn repeatedEleSize(t: FieldDescriptorProto.Type) u8 {
         .TYPE_DOUBLE,
         => 8,
         .TYPE_STRING, .TYPE_BYTES => @sizeOf(pb.extern_types.String),
-        .TYPE_MESSAGE => @sizeOf(*Message),
-        .TYPE_ERROR, .TYPE_GROUP => unreachable,
+        .TYPE_MESSAGE, .TYPE_GROUP => @sizeOf(*Message),
+        .TYPE_ERROR => unreachable,
     };
 }
 
@@ -609,6 +609,17 @@ fn parseRequiredMember(
                 subm.* = try deserialize(field_desc, &limctx);
             }
         },
+        .TYPE_GROUP => {
+            const field_desc = field.getDescriptor(MessageDescriptor);
+            var limctx = ctx.withData(scanned_member.data);
+            if (field.label == .LABEL_REPEATED) {
+                const subm = try deserialize(field_desc, &limctx);
+                listAppend(member, ListMut(*Message), subm);
+            } else {
+                const subm = ptrAlignCast(**Message, member);
+                subm.* = try deserialize(field_desc, &limctx);
+            }
+        },
         else => todo("{s} ", .{@tagName(field.type)}),
     }
 }
@@ -623,7 +634,6 @@ fn parseMember(
         ufield.* = .{
             .key = scanned_member.key,
             .data = String.init(try ctx.allocator.dupe(u8, scanned_member.data)),
-            // [0 .. scanned_member.data.len - scanned_member.prefix_len]
         };
         std.log.debug("unknown field data {}:'{}' prefix_len {}", .{
             ufield.data.len,
@@ -811,13 +821,26 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                 sm.prefix_len = lens[0];
                 try ctx.skip(sm.data.len);
             },
-            else => {
-                return deserializeErr(
-                    "unsupported tag .{s} at offset {}",
-                    .{ @tagName(key.wire_type), ctx.bytesRead() },
-                    error.InvalidType,
+            .SGROUP => {
+                const field = sm.field orelse unreachable;
+                const endkey = Key.init(.EGROUP, sm.key.field_id);
+                var buf1 = [1]u8{0} ** 8;
+                var fbs = std.io.fixedBufferStream(&buf1);
+                try writeVarint128(usize, endkey.encode(), fbs.writer(), .int);
+                const endkey_bytes = buf1[0..fbs.pos];
+                // TODO - not 100% sure this is correct. might have to allow
+                // for nested groups with the same field number?  if so, need to
+                // adapt this search to allow for finding 'startkey's before
+                // endkey
+                sm.data.len = mem.indexOf(u8, ctx.data, endkey_bytes) orelse
+                    return deserializeErr(
+                    "group missing end tag. field '{s}' {}",
+                    .{ field.name, field.id },
+                    error.InvalidData,
                 );
+                try ctx.skip(sm.data.len + fbs.pos);
             },
+            .EGROUP => {},
         }
 
         if (mfield) |field| {
@@ -1026,12 +1049,11 @@ fn encodeUnlabeledField(
 }
 
 fn encodeRequiredField(
-    message: *const Message,
+    _: *const Message,
     field: FieldDescriptor,
     member: [*]const u8,
     writer: anytype,
 ) Error!void {
-    _ = message;
     std.log.debug(
         "encodeRequiredField() '{s}' .{s} .{s}",
         .{ field.name, field.type.tagName(), field.label.tagName() },
@@ -1095,6 +1117,14 @@ fn encodeRequiredField(
             std.log.debug("string {*}/{}:{x}", .{ s.items, s.len, s.len });
             _ = try writer.write(s.slice());
         },
+        .TYPE_GROUP => {
+            const startkey = Key.init(.SGROUP, field.id);
+            try writeVarint128(usize, startkey.encode(), writer, .int);
+            const subm = ptrAlignCast(*const *Message, member);
+            try serialize(subm.*, writer);
+            const endkey = Key.init(.EGROUP, field.id);
+            try writeVarint128(usize, endkey.encode(), writer, .int);
+        },
         else => todo("encodeRequiredField() field.type .{s}", .{field.type.tagName()}),
     }
 }
@@ -1106,7 +1136,7 @@ fn encodeUnknownField(
 ) Error!void {
     _ = message;
     std.log.debug(
-        "encodeRequiredField() key wite_type=.{s} field_id={} data.len={}",
+        "encodeUnknownField() key wite_type=.{s} field_id={} data.len={}",
         .{ @tagName(ufield.key.wire_type), ufield.key.field_id, ufield.data.len },
     );
 

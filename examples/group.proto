@@ -1,0 +1,12 @@
+syntax = "proto2";
+
+message Grouped {
+  optional group Data = 201 {
+    optional int32 group_int32 = 202;
+    optional uint32 group_uint32 = 203;
+  }
+  repeated group Data2 = 211 {
+    optional int32 group2_int32 = 212;
+    optional uint32 group2_uint32 = 213;
+  }
+}

@@ -81,6 +81,7 @@ pub fn build(b: *std.build.Builder) !void {
         "examples/google/protobuf/any.proto",
         "examples/google/protobuf/test_messages_proto3.proto",
         "examples/google/protobuf/test_messages_proto2.proto",
+        "examples/group.proto",
     });
 
     const main_tests = b.addTest(.{

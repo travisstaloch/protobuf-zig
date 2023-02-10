@@ -553,7 +553,7 @@ pub const Message = extern struct {
     pub fn setPresentFieldIndex(m: *Message, field_index: usize) void {
         const desc = m.descriptor orelse
             @panic("called setPresentFieldIndex() on a message with no descriptor.");
-        std.log.info("setPresentFieldIndex() field_index {} opt_field_ids {any}", .{ field_index, desc.opt_field_ids.slice() });
+        std.log.info("setPresentFieldIndex() field_index {}", .{field_index});
         m.setPresent(desc.field_ids.items[field_index]);
     }
 
@@ -707,7 +707,8 @@ pub const Message = extern struct {
         return f.label == .LABEL_REPEATED or
             f.type == .TYPE_STRING or
             f.type == .TYPE_BYTES or
-            f.type == .TYPE_MESSAGE;
+            f.type == .TYPE_MESSAGE or
+            f.type == .TYPE_GROUP;
     }
 
     fn deinitImpl(
@@ -743,7 +744,7 @@ pub const Message = extern struct {
                             s.deinit(allocator);
                         list.deinit(allocator);
                     }
-                } else if (field.type == .TYPE_MESSAGE) {
+                } else if (field.type == .TYPE_MESSAGE or field.type == .TYPE_GROUP) {
                     const L = ListMut(*Message);
                     var list = ptrAlignCast(*L, bytes + field.offset);
                     if (list.len != 0) {
@@ -774,7 +775,7 @@ pub const Message = extern struct {
                         allocator.free(list.items[0 .. size * list.cap]);
                     }
                 }
-            } else if (field.type == .TYPE_MESSAGE) {
+            } else if (field.type == .TYPE_MESSAGE or field.type == .TYPE_GROUP) {
                 if (m.hasFieldId(field.id)) {
                     std.log.debug(
                         "deinit {s}.{s} single message field",

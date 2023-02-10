@@ -183,3 +183,46 @@ test "ser oneof-2.proto" {
     try protobuf.serialize(m, buf2.writer());
     try testing.expectEqualStrings(buf.items, buf2.items);
 }
+
+test "ser group round trip" {
+    const group = @import("generated").group;
+    const T = group.Grouped;
+
+    var g = T.init();
+
+    // .data field
+    var data = T.Data.init();
+    g.set(.data, &data);
+    data.set(.group_int32, 202);
+    data.set(.group_uint32, 203);
+
+    // .data2 field
+    var item = T.Data2.init();
+    item.set(.group2_int32, 212);
+    item.set(.group2_uint32, 213);
+    var data2list = pb.extern_types.ArrayListMut(*T.Data2){};
+    defer data2list.deinit(talloc);
+    try data2list.append(talloc, &item);
+    g.set(.data2, data2list);
+
+    // ser g
+    var buf = std.ArrayList(u8).init(talloc);
+    defer buf.deinit();
+    try pb.protobuf.serialize(&g.base, buf.writer());
+
+    // deser ser g
+    var ctx = protobuf.context(buf.items, talloc);
+    const m = try ctx.deserialize(&T.descriptor);
+    defer m.deinit(talloc);
+    const g2 = try m.as(T);
+    try testing.expect(g2.has(.data));
+    try testing.expect(g2.has(.data2));
+    try testing.expect(g2.data2.len == 1);
+
+    // ser deser ser g
+    var buf2 = std.ArrayList(u8).init(talloc);
+    defer buf2.deinit();
+    try pb.protobuf.serialize(m, buf2.writer());
+
+    try testing.expectEqualStrings(buf.items, buf2.items);
+}

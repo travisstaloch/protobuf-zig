@@ -406,6 +406,7 @@ pub fn genFieldDescriptors(
         switch (field.type) {
             .TYPE_MESSAGE,
             .TYPE_ENUM,
+            .TYPE_GROUP,
             => try writeZigFieldTypeName("&", field, ".descriptor,\n", proto_file, zig_writer, ctx),
             else => _ = try zig_writer.write("null,\n"),
         }
