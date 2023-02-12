@@ -173,12 +173,20 @@ fn runTest(allr: Allocator, request: *Request) !Response {
         switch (request.requested_output_format) {
             .UNSPECIFIED => return error.InvalidArgument_UnspecifiedOutputFormat,
             .PROTOBUF => {
+                // response.set(.result__skipped, String.init("TODO PB output"));
                 var output = std.ArrayList(u8).init(allr);
                 try pb.protobuf.serialize(test_message.?, output.writer());
                 response.set(.result__protobuf_payload, String.init(try output.toOwnedSlice()));
             },
             .JSON => {
-                response.set(.result__skipped, String.init("TODO JSON output"));
+                // response.set(.result__skipped, String.init("TODO JSON output"));
+                var output = std.ArrayList(u8).init(allr);
+                try pb.json.serialize(
+                    test_message.?,
+                    output.writer(),
+                    .{ .pretty_print = .{ .enabled = true, .num_spaces = 2 } },
+                );
+                response.set(.result__json_payload, String.init(try output.toOwnedSlice()));
             },
             .JSPB => {
                 response.set(.result__skipped, String.init("TODO JSPB output"));
