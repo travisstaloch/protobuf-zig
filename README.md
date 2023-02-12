@@ -7,13 +7,13 @@ A tool for generating zig code capable of de/serializing to the protocol buffer 
 - [x] zig code generation
   - [ ] recursive message types don't work yet [#1](../../issues/1). see [examples/recursive.proto](examples/recursive.proto)
 - [x] deserialization from wire format
-  - [ ] merging messages not yet implemented
+  - [ ] merging messages not yet implemented - 6 conformance failures
 - [x] serialization to wire format
-- [x] initial serialization to json format
-- [w] conformance testing results: 1368/408/136  success/skip/fail.  all but 6 of the failures are due to json serialization. most of these failures are map field related. all 408 skipped are in these categories:
-  - [ ] parse json?
-  - [ ] output text format?
-  - [ ] output jspb format?
+- [x] initial serialization to json format - 13 conformance failures
+- [w] conformance testing results: 1485/408/19 success/skip/fail.  the 408 skipped are in these categories:
+  - [ ] json input
+  - [ ] text format output
+  - [ ] jspb format output
 
 # Usage
 
