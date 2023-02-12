@@ -705,16 +705,16 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
     else
         null;
 
-    const req_fields_bitmap_bitlength = @bitSizeOf(usize) * 4;
-    const req_fields_bitmap_size = @sizeOf(std.DynamicBitSetUnmanaged) +
-        req_fields_bitmap_bitlength;
-    var sfa0 = std.heap.stackFallback(req_fields_bitmap_size, ctx.allocator);
-    const sfa0_alloc = sfa0.get();
+    // use 32 bytes (256 bits) of stack space for req_fields_bitmap, falling
+    // back to user allocator
+    const req_fields_bitmap_size = @sizeOf(usize) * 4;
+    var sfa1 = std.heap.stackFallback(req_fields_bitmap_size, ctx.allocator);
+    const sfa1_alloc = sfa1.get();
     var req_fields_bitmap = try std.DynamicBitSetUnmanaged.initEmpty(
-        sfa0_alloc,
-        req_fields_bitmap_bitlength,
+        sfa1_alloc,
+        req_fields_bitmap_size * @bitSizeOf(usize), // bitsize
     );
-    defer req_fields_bitmap.deinit(sfa0_alloc);
+    defer req_fields_bitmap.deinit(sfa1_alloc);
 
     var last_field_index: u32 = 0;
     var n_unknown: u32 = 0;
@@ -742,10 +742,10 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
     // pre-scan the wire message saving to scanned_members in order to find out
     // how long repeated fields are before allocating them.
     // ---
-    var sfa = std.heap.stackFallback(@sizeOf(ScannedMember) * 16, ctx.allocator);
-    const sfalloc = sfa.get();
+    var sfa2 = std.heap.stackFallback(@sizeOf(ScannedMember) * 16, ctx.allocator);
+    const sfa2_alloc = sfa2.get();
     var scanned_members: std.ArrayListUnmanaged(ScannedMember) = .{};
-    defer scanned_members.deinit(sfalloc);
+    defer scanned_members.deinit(sfa2_alloc);
 
     while (true) {
         const key = ctx.readKey() catch |e| switch (e) {
@@ -862,7 +862,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                 } else list.len += 1;
             }
         } else std.log.debug("(scan) field {s} unknown", .{desc.name});
-        try scanned_members.append(sfalloc, sm);
+        try scanned_members.append(sfa2_alloc, sm);
     }
 
     // --
