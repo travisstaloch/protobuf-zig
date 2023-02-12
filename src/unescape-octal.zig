@@ -60,13 +60,44 @@ pub fn parseEscapes(content_: []u8) ![]u8 {
         }
     }
 }
-
+const Format = enum { hex, binary };
 pub fn main() !void {
     // var input = "\\202\\002\\001\\200".*;
-    var stdin = std.io.getStdIn().reader();
+    const stdin = std.io.getStdIn().reader();
+
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const alloc = arena.allocator();
+    var args = try std.process.argsWithAllocator(alloc);
+    _ = args.next();
+
+    // parse args: format
+    var format = Format.hex;
+    while (args.next()) |arg| {
+        if (std.mem.startsWith(u8, arg, "--format")) {
+            const s = args.next() orelse {
+                std.log.err("missing --format arg. accepted values {s}", .{std.meta.fieldNames(Format)});
+                return error.Arg;
+            };
+            format = std.meta.stringToEnum(Format, s) orelse {
+                std.log.err("invalid --format arg '{s}'. accepted values {s}", .{ s, std.meta.fieldNames(Format) });
+                return error.Arg;
+            };
+        } else if (std.mem.eql(u8, arg, "-b")) {
+            format = .binary;
+        } else {
+            unreachable;
+        }
+    }
     var input = try stdin.readAllAlloc(alloc, std.math.maxInt(u32));
+
+    // trim newlines. maybe should only trim one?
+    while (input.len > 0) : (input.len -= 1) {
+        if (input[input.len - 1] != '\n') break;
+    }
     const escaped = try parseEscapes(input);
-    std.debug.print("\n{}\n", .{std.fmt.fmtSliceHexLower(escaped)});
+    const stdout = std.io.getStdOut().writer();
+    if (format == .hex)
+        try stdout.print("\n{}\n", .{std.fmt.fmtSliceHexLower(escaped)})
+    else
+        try stdout.print("{s}", .{escaped});
 }
