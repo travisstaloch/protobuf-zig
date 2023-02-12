@@ -173,3 +173,21 @@ test "conf Required.Proto3.ProtobufInput.UnknownVarint.ProtobufOutput" {
     defer talloc.free(hex);
     try testing.expectEqualSlices(u8, input, hex);
 }
+
+test "conf Required.Proto3.ProtobufInput.ValidDataMap.STRING.ENUM.Unordered.JsonOutput" {
+    const input = "ca040510010a0161";
+    const m = try pb.testing.deserializeHexBytesHelper(
+        test3.TestAllTypesProto3,
+        input,
+        talloc,
+    );
+    defer m.base.deinit(talloc);
+    var buf = std.ArrayList(u8).init(talloc);
+    defer buf.deinit();
+    try pb.json.serialize(&m.base, buf.writer(), .{});
+    std.debug.print("{s}\n", .{buf.items});
+    const expected =
+        \\{"map_string_nested_enum":{"a":"BAR"}}
+    ;
+    try testing.expectEqualSlices(u8, expected, buf.items);
+}

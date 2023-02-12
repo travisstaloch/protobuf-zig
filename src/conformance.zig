@@ -53,7 +53,10 @@ fn debugReq(request: *Request, buf: []const u8) void {
     std.debug.print("message_type            {s}\n", .{request.message_type});
     std.debug.print("requested_output_format {}\n", .{request.requested_output_format});
     std.debug.print("test_category           {}\n", .{request.test_category});
-    std.debug.print("payload                 {s} : {}({})\n", .{ payload_tagname, std.fmt.fmtSliceHexLower(payload.slice()), payload.len });
+    if (tag == .payload__protobuf_payload)
+        std.debug.print("payload                 {s} : {}({})\n", .{ payload_tagname, std.fmt.fmtSliceHexLower(payload.slice()), payload.len })
+    else
+        std.debug.print("payload                 {s} : {s}({})\n", .{ payload_tagname, payload.slice(), payload.len });
     std.debug.print("message                 {}\n", .{std.fmt.fmtSliceHexLower(buf)});
     std.debug.print("----\n", .{});
 }
@@ -82,13 +85,6 @@ fn serveConformanceRequest() !bool {
     var ctx = pb.protobuf.context(buf.items, allr);
     var request_m = try ctx.deserialize(&Request.descriptor);
     const request = try request_m.as(Request);
-    if (!request.has(.payload__protobuf_payload)) {
-        var response = cf.ConformanceResponse.init();
-        const active_tag = request.activeTag(.payload) orelse unreachable;
-        response.set(.result__skipped, String.init(@tagName(active_tag)));
-        try serializeTo(response, stdout);
-        return false;
-    }
 
     const response = runTest(allr, request) catch |e| {
         std.debug.print("error: runTest() {s}\n", .{@errorName(e)});
@@ -117,6 +113,9 @@ fn serveConformanceRequest() !bool {
 
 fn runTest(allr: Allocator, request: *Request) !Response {
     var response = Response.init();
+    // if (request.test_category == .JSON_TEST) {
+    //     debugReq(request, &.{});
+    // }
     if (std.mem.eql(u8, request.message_type.slice(), "conformance.FailureSet")) {
         var failure_set = cf.FailureSet.init();
         var failures = std.ArrayList([]const u8).init(allr);
@@ -156,9 +155,9 @@ fn runTest(allr: Allocator, request: *Request) !Response {
             },
             .payload__json_payload => {
                 response.set(.result__skipped, String.init("TODO json_payload"));
-                return response;
                 // var tokens = std.json.TokenStream.init(request.payload.json_payload);
                 // test_message = try std.json.parse(test3.TestAllTypesProto3, &tokens, .{ .ignore_unknown_fields = true });
+                return response;
             },
             .payload__jspb_payload => {
                 response.set(.result__skipped, String.init("TODO jspb_payload"));
