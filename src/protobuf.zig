@@ -673,7 +673,7 @@ fn messageTypeName(magic: u32) []const u8 {
     };
 }
 
-fn verifyMessageType(magic: u32, expected_magic: u32) Error!void {
+pub fn verifyMessageType(magic: u32, expected_magic: u32) Error!void {
     if (magic != expected_magic) {
         std.log.err("deserialize() requires a {s} type but got {s}", .{
             messageTypeName(expected_magic),
