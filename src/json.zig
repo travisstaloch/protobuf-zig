@@ -42,29 +42,24 @@ fn enumTagname(enumdesc: *const types.EnumDescriptor, int: i32) ![]const u8 {
     );
 }
 
-const FieldWriteOptions = struct {
-    fmt: []const u8 = "{}",
-};
-
 fn serializeFieldImpl(
     info: FieldInfo,
     comptime T: type,
     writer: anytype,
-    comptime options: FieldWriteOptions,
 ) !void {
     if (info.is_repeated) {
         const list = ptrAlignCast(*const List(T), info.member);
         for (list.slice()) |int, i| {
             if (i != 0) _ = try writer.writeByte(',');
             try info.options.writeIndent(writer);
-            try writer.print(options.fmt, .{int});
+            try writer.print("{}", .{int});
         }
         var info_ = info;
         if (info_.options.pretty_print) |*opp| opp.indent_level -= 1;
         try info_.options.writeIndent(writer);
     } else {
         try writer.print(
-            options.fmt,
+            "{}",
             .{mem.readIntLittle(T, info.member[0..@sizeOf(T)])},
         );
     }
@@ -120,6 +115,16 @@ pub fn serialize(
     writer: anytype,
     options: Options,
 ) Error!void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    return serializeImpl(message, writer, options, &arena);
+}
+pub fn serializeImpl(
+    message: *const Message,
+    writer: anytype,
+    options: Options,
+    arena: *std.heap.ArenaAllocator,
+) Error!void {
     const desc = message.descriptor orelse return serializeErr(
         "invalid message. missing descriptor",
         .{},
@@ -144,10 +149,10 @@ pub fn serialize(
                 key_field,
                 buf.ptr + key_field.offset,
                 false,
-                true,
                 child_options,
             ),
             writer,
+            arena,
         );
         if (key_field.type != .TYPE_STRING)
             _ = try writer.write("\":")
@@ -161,10 +166,10 @@ pub fn serialize(
                 value_field,
                 buf.ptr + value_field.offset,
                 false,
-                true,
                 child_options,
             ),
             writer,
+            arena,
         );
     } else for (desc.fields.slice()) |field| {
         if (!message.hasFieldId(field.id)) continue;
@@ -184,22 +189,16 @@ pub fn serialize(
             \\"{}":
         , .{field.name});
         if (child_options.pretty_print != null) _ = try writer.write(" ");
-        const is_map = field.descriptor != null and
-            (field.type == .TYPE_MESSAGE or field.type == .TYPE_GROUP) and
-            flagsContain(
-            field.getDescriptor(MessageDescriptor).flags,
-            MessageDescriptor.Flag.FLAG_MAP_TYPE,
-        );
 
         try serializeField(
             FieldInfo.init(
                 field,
                 buf.ptr + field.offset,
                 is_repeated,
-                is_map,
                 child_options,
             ),
             writer,
+            arena,
         );
     }
     if (any_written) try options.writeIndent(writer);
@@ -210,21 +209,18 @@ pub const FieldInfo = struct {
     field: FieldDescriptor,
     member: [*]const u8,
     is_repeated: bool,
-    is_map: bool,
     options: Options,
 
     pub fn init(
         field: FieldDescriptor,
         member: [*]const u8,
         is_repeated: bool,
-        is_map: bool,
         options: Options,
     ) FieldInfo {
         return .{
             .field = field,
             .member = member,
             .is_repeated = is_repeated,
-            .is_map = is_map,
             .options = options,
         };
     }
@@ -233,23 +229,31 @@ pub const FieldInfo = struct {
 fn serializeField(
     info: FieldInfo,
     writer: anytype,
+    arena: *std.heap.ArenaAllocator,
 ) !void {
     var child_info = info;
-    if (child_info.is_repeated and !child_info.is_map) {
+    const field = child_info.field;
+    const member = child_info.member;
+    const is_map = field.descriptor != null and
+        (field.type == .TYPE_MESSAGE or field.type == .TYPE_GROUP) and
+        flagsContain(
+        field.getDescriptor(MessageDescriptor).flags,
+        MessageDescriptor.Flag.FLAG_MAP_TYPE,
+    );
+
+    if (child_info.is_repeated and !is_map) {
         try writer.writeByte('[');
         if (child_info.options.pretty_print) |*cpp| cpp.indent_level += 1;
     }
-    const field = child_info.field;
-    const member = child_info.member;
 
     switch (field.type) {
         .TYPE_INT32,
         .TYPE_SINT32,
         .TYPE_SFIXED32,
-        => try serializeFieldImpl(child_info, i32, writer, .{}),
+        => try serializeFieldImpl(child_info, i32, writer),
         .TYPE_UINT32,
         .TYPE_FIXED32,
-        => try serializeFieldImpl(child_info, u32, writer, .{}),
+        => try serializeFieldImpl(child_info, u32, writer),
         .TYPE_BOOL => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(u32), member);
             for (list.slice()) |int, i| {
@@ -279,10 +283,10 @@ fn serializeField(
         .TYPE_INT64,
         .TYPE_SINT64,
         .TYPE_SFIXED64,
-        => try serializeFieldImpl(child_info, i64, writer, .{}),
+        => try serializeFieldImpl(child_info, i64, writer),
         .TYPE_UINT64,
         .TYPE_FIXED64,
-        => try serializeFieldImpl(child_info, u64, writer, .{}),
+        => try serializeFieldImpl(child_info, u64, writer),
         .TYPE_FLOAT => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(f32), member);
             for (list.slice()) |int, i| {
@@ -328,20 +332,69 @@ fn serializeField(
             try b64Encode(s.*, writer);
         },
         .TYPE_MESSAGE, .TYPE_GROUP => if (child_info.is_repeated) {
-            const list = ptrAlignCast(*const List(*Message), member);
-            for (list.slice()) |subm, i| {
-                if (i != 0) _ = try writer.writeByte(',');
-                try child_info.options.writeIndent(writer);
-                try serialize(subm, writer, child_info.options);
+            if (!is_map) {
+                const list = ptrAlignCast(*const List(*Message), member);
+                for (list.slice()) |subm, i| {
+                    if (i != 0) _ = try writer.writeByte(',');
+                    try child_info.options.writeIndent(writer);
+                    try serializeImpl(subm, writer, child_info.options, arena);
+                }
+            } else { // is_map
+                // don't write duplicate key entries. each list element
+                // is a map entry type. strategy to avoid duplicates: store a
+                // set of all previously written keys and iterate the list
+                // backwards, skipping if key is found.
+                const list = ptrAlignCast(*const List(*Message), member);
+                var i = list.len - 1; // already know that len != 0
+                var any_written = false;
+
+                _ = arena.reset(.retain_capacity);
+                const aalloc = arena.allocator();
+                var namebuf =
+                    try std.ArrayListUnmanaged(u8).initCapacity(aalloc, 256);
+                var keys_written = std.StringHashMapUnmanaged(void){};
+                while (true) : (i -= 1) {
+                    const subm = list.items[i];
+                    const desc = field.getDescriptor(MessageDescriptor);
+                    const key_field = desc.fields.slice()[0];
+                    assert(mem.eql(u8, "key", key_field.name.slice()));
+                    namebuf.items.len = 0;
+                    try serializeField(
+                        FieldInfo.init(
+                            key_field,
+                            @ptrCast([*]const u8, subm) + key_field.offset,
+                            false,
+                            child_info.options,
+                        ),
+                        namebuf.writer(aalloc),
+                        arena,
+                    );
+                    const gop =
+                        try keys_written.getOrPut(aalloc, namebuf.items);
+                    if (!gop.found_existing) {
+                        if (any_written)
+                            _ = try writer.writeByte(',')
+                        else
+                            any_written = true;
+                        try child_info.options.writeIndent(writer);
+                        try serializeImpl(
+                            subm,
+                            writer,
+                            child_info.options,
+                            arena,
+                        );
+                    }
+                    if (i == 0) break;
+                }
             }
         } else {
             const subm = ptrAlignCast(*const *Message, member);
-            try serialize(subm.*, writer, child_info.options);
+            try serializeImpl(subm.*, writer, child_info.options, arena);
         },
         .TYPE_ERROR => unreachable,
     }
 
-    if (child_info.is_repeated and !child_info.is_map) {
+    if (child_info.is_repeated and !is_map) {
         try info.options.writeIndent(writer);
         try writer.writeByte(']');
     }

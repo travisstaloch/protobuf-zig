@@ -191,3 +191,21 @@ test "conf Required.Proto3.ProtobufInput.ValidDataMap.STRING.ENUM.Unordered.Json
     ;
     try testing.expectEqualSlices(u8, expected, buf.items);
 }
+
+test "conf Required.Proto3.ProtobufInput.ValidDataMap.INT32.INT32.DuplicateKey.JsonOutput" {
+    const input = "c2030408011000c2030408011001";
+    const m = try pb.testing.deserializeHexBytesHelper(
+        test3.TestAllTypesProto3,
+        input,
+        talloc,
+    );
+    defer m.base.deinit(talloc);
+    var buf = std.ArrayList(u8).init(talloc);
+    defer buf.deinit();
+    try pb.json.serialize(&m.base, buf.writer(), .{});
+    std.debug.print("{s}\n", .{buf.items});
+    const expected =
+        \\{"map_int32_int32":{"1":1}}
+    ;
+    try testing.expectEqualSlices(u8, expected, buf.items);
+}
