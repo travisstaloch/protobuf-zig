@@ -46,7 +46,7 @@ const FieldWriteOptions = struct {
     fmt: []const u8 = "{}",
 };
 
-fn serializeFieldI(
+fn serializeFieldImpl(
     info: FieldInfo,
     comptime T: type,
     writer: anytype,
@@ -75,11 +75,11 @@ pub const Options = struct {
     /// strings.
     /// TODO
     always_print_enums_as_ints: bool = false,
-    /// Controls how to add spaces, line breaks and indentation to make the JSON output
-    /// easy to read.
     /// Whether to preserve proto field names
     /// TODO
     preserve_proto_field_names: bool = false,
+    /// Controls how to add spaces, line breaks and indentation to make the JSON output
+    /// easy to read.
     pretty_print: ?struct {
         /// The number of space chars to print per indent level.
         indent_size: u4 = 4,
@@ -120,14 +120,6 @@ pub fn serialize(
     writer: anytype,
     options: Options,
 ) Error!void {
-    return serializeImpl(message, writer, options);
-}
-
-pub fn serializeImpl(
-    message: *const Message,
-    writer: anytype,
-    options: Options,
-) Error!void {
     const desc = message.descriptor orelse return serializeErr(
         "invalid message. missing descriptor",
         .{},
@@ -152,6 +144,7 @@ pub fn serializeImpl(
                 key_field,
                 buf.ptr + key_field.offset,
                 false,
+                true,
                 child_options,
             ),
             writer,
@@ -168,6 +161,7 @@ pub fn serializeImpl(
                 value_field,
                 buf.ptr + value_field.offset,
                 false,
+                true,
                 child_options,
             ),
             writer,
@@ -190,11 +184,19 @@ pub fn serializeImpl(
             \\"{}":
         , .{field.name});
         if (child_options.pretty_print != null) _ = try writer.write(" ");
+        const is_map = field.descriptor != null and
+            (field.type == .TYPE_MESSAGE or field.type == .TYPE_GROUP) and
+            flagsContain(
+            field.getDescriptor(MessageDescriptor).flags,
+            MessageDescriptor.Flag.FLAG_MAP_TYPE,
+        );
+
         try serializeField(
             FieldInfo.init(
                 field,
                 buf.ptr + field.offset,
                 is_repeated,
+                is_map,
                 child_options,
             ),
             writer,
@@ -208,18 +210,21 @@ pub const FieldInfo = struct {
     field: FieldDescriptor,
     member: [*]const u8,
     is_repeated: bool,
+    is_map: bool,
     options: Options,
 
     pub fn init(
         field: FieldDescriptor,
         member: [*]const u8,
         is_repeated: bool,
+        is_map: bool,
         options: Options,
     ) FieldInfo {
         return .{
             .field = field,
             .member = member,
             .is_repeated = is_repeated,
+            .is_map = is_map,
             .options = options,
         };
     }
@@ -230,7 +235,7 @@ fn serializeField(
     writer: anytype,
 ) !void {
     var child_info = info;
-    if (child_info.is_repeated) {
+    if (child_info.is_repeated and !child_info.is_map) {
         try writer.writeByte('[');
         if (child_info.options.pretty_print) |*cpp| cpp.indent_level += 1;
     }
@@ -241,10 +246,10 @@ fn serializeField(
         .TYPE_INT32,
         .TYPE_SINT32,
         .TYPE_SFIXED32,
-        => try serializeFieldI(child_info, i32, writer, .{}),
+        => try serializeFieldImpl(child_info, i32, writer, .{}),
         .TYPE_UINT32,
         .TYPE_FIXED32,
-        => try serializeFieldI(child_info, u32, writer, .{}),
+        => try serializeFieldImpl(child_info, u32, writer, .{}),
         .TYPE_BOOL => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(u32), member);
             for (list.slice()) |int, i| {
@@ -274,10 +279,10 @@ fn serializeField(
         .TYPE_INT64,
         .TYPE_SINT64,
         .TYPE_SFIXED64,
-        => try serializeFieldI(child_info, i64, writer, .{}),
+        => try serializeFieldImpl(child_info, i64, writer, .{}),
         .TYPE_UINT64,
         .TYPE_FIXED64,
-        => try serializeFieldI(child_info, u64, writer, .{}),
+        => try serializeFieldImpl(child_info, u64, writer, .{}),
         .TYPE_FLOAT => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(f32), member);
             for (list.slice()) |int, i| {
@@ -327,16 +332,16 @@ fn serializeField(
             for (list.slice()) |subm, i| {
                 if (i != 0) _ = try writer.writeByte(',');
                 try child_info.options.writeIndent(writer);
-                try serializeImpl(subm, writer, child_info.options);
+                try serialize(subm, writer, child_info.options);
             }
         } else {
             const subm = ptrAlignCast(*const *Message, member);
-            try serializeImpl(subm.*, writer, child_info.options);
+            try serialize(subm.*, writer, child_info.options);
         },
         .TYPE_ERROR => unreachable,
     }
 
-    if (child_info.is_repeated) {
+    if (child_info.is_repeated and !child_info.is_map) {
         try info.options.writeIndent(writer);
         try writer.writeByte(']');
     }
