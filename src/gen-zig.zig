@@ -330,6 +330,11 @@ pub fn genMessage(
     }
 
     try zig_writer.print(
+        "pub const is_map_entry = {};\n",
+        .{message.has(.options) and message.options.map_entry},
+    );
+
+    try zig_writer.print(
         \\
         \\pub usingnamespace MessageMixins(@This());
         \\

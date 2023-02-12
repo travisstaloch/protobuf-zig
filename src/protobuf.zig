@@ -651,13 +651,13 @@ fn parseMember(
     var member = @ptrCast([*]u8, message) + field.offset;
     return switch (field.label) {
         .LABEL_REQUIRED => parseRequiredMember(scanned_member, member, message, ctx, true),
-        .LABEL_OPTIONAL, .LABEL_NONE => if (flagsContain(field.flags, .FLAG_ONEOF))
+        .LABEL_OPTIONAL, .LABEL_NONE => if (flagsContain(field.flags, FieldFlag.FLAG_ONEOF))
             parseOneofMember(scanned_member, member, message, ctx)
         else
             parseOptionalMember(scanned_member, member, message, ctx),
 
         .LABEL_REPEATED => if (scanned_member.key.wire_type == .LEN and
-            (flagsContain(field.flags, .FLAG_PACKED) or isPackableType(field.type)))
+            (flagsContain(field.flags, FieldFlag.FLAG_PACKED) or isPackableType(field.type)))
             parsePackedRepeatedMember(scanned_member, member, message, ctx)
         else
             parseRepeatedMember(scanned_member, member, message, ctx),
@@ -996,7 +996,7 @@ fn encodeRepeatedField(
         "encodeRepeatedField() '{s}' .{s} .{s} list.len={}",
         .{ field.name, field.type.tagName(), field.label.tagName(), list.len },
     );
-    if (flagsContain(field.flags, .FLAG_PACKED)) {
+    if (flagsContain(field.flags, FieldFlag.FLAG_PACKED)) {
         var cwriter = std.io.countingWriter(std.io.null_writer);
         try encodeRepeatedPacked(list, field, cwriter.writer());
         const key = Key.init(.LEN, field.id);
@@ -1159,7 +1159,7 @@ pub fn serialize(message: *const Message, writer: anytype) Error!void {
         if (field.label == .LABEL_REQUIRED)
             try encodeRequiredField(message, field, member, writer)
         else if ((field.label == .LABEL_OPTIONAL or field.label == .LABEL_NONE) and
-            flagsContain(field.flags, .FLAG_ONEOF))
+            flagsContain(field.flags, FieldFlag.FLAG_ONEOF))
             try encodeOneofField(message, field, member, writer)
         else if (field.label == .LABEL_OPTIONAL)
             try encodeOptionalField(message, field, member, writer)

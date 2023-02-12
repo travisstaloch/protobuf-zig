@@ -18,6 +18,7 @@ const FieldDescriptorProto = descr.FieldDescriptorProto;
 const DescriptorProto = descr.DescriptorProto;
 const Label = FieldDescriptorProto.Label;
 const Type = FieldDescriptorProto.Type;
+const FieldFlag = FieldDescriptor.FieldFlag;
 const common = pb.common;
 const top_level = @This();
 
@@ -271,7 +272,7 @@ pub const EnumDescriptor = extern struct {
     }
 };
 
-pub fn flagsContain(flags: u32, flag: FieldDescriptor.FieldFlag) bool {
+pub fn flagsContain(flags: u32, flag: anytype) bool {
     return flags & @enumToInt(flag) != 0;
 }
 
@@ -361,9 +362,14 @@ pub const MessageDescriptor = extern struct {
     opt_field_ids: List(c_uint),
     oneof_field_ids: List(List(c_uint)),
     message_init: MessageInit = null,
+    flags: u32 = 0,
     reserved1: ?*anyopaque = null,
     reserved2: ?*anyopaque = null,
     reserved3: ?*anyopaque = null,
+
+    pub const Flag = enum(u32) {
+        FLAG_MAP_TYPE = @as(u32, 1) << 0,
+    };
 
     pub fn init(comptime T: type) MessageDescriptor {
         comptime {
@@ -375,6 +381,10 @@ pub const MessageDescriptor = extern struct {
                 &T.oneof_field_ids
             else
                 &.{};
+            const flags = if (@hasDecl(T, "is_map_entry") and T.is_map_entry)
+                @enumToInt(Flag.FLAG_MAP_TYPE)
+            else
+                0;
             var result: MessageDescriptor = .{
                 .magic = MESSAGE_DESCRIPTOR_MAGIC,
                 .name = String.init(name),
@@ -386,6 +396,7 @@ pub const MessageDescriptor = extern struct {
                 .opt_field_ids = List(c_uint).init(&T.opt_field_ids),
                 .oneof_field_ids = List(List(c_uint)).init(oneof_field_ids),
                 .message_init = InitBytes(T),
+                .flags = flags,
             };
             // TODO - audit and remove unnecessary checks
             {
@@ -415,7 +426,7 @@ pub const MessageDescriptor = extern struct {
             var n_oneof_fields: u32 = 0;
             for (fields.slice()) |field|
                 n_oneof_fields +=
-                    @boolToInt(flagsContain(field.flags, .FLAG_ONEOF));
+                    @boolToInt(flagsContain(field.flags, FieldFlag.FLAG_ONEOF));
             const len = @typeInfo(T).Struct.fields.len;
             const actual_len = fields.len + 1 -
                 (n_oneof_fields -| oneof_field_ids.len);
@@ -438,7 +449,7 @@ pub const MessageDescriptor = extern struct {
             var i: usize = 0;
             for (fields.slice()) |field| {
                 const f = tfields[i + 1];
-                if (flagsContain(field.flags, .FLAG_ONEOF)) {
+                if (flagsContain(field.flags, FieldFlag.FLAG_ONEOF)) {
                     // only add the size of oneof fields once
                     // TODO verify union field names match
                     continue;
@@ -727,7 +738,7 @@ pub const Message = extern struct {
         for (desc.fields.slice()) |field| {
             if (mode == .only_pointer_fields and !isPointerField(field))
                 continue;
-            if (flagsContain(field.flags, .FLAG_ONEOF) and
+            if (flagsContain(field.flags, FieldFlag.FLAG_ONEOF) and
                 !m.hasFieldId(field.id))
                 continue;
 
