@@ -60,7 +60,7 @@ fn serializeFieldI(
             try writer.print(options.fmt, .{int});
         }
         var info_ = info;
-        info_.options.pretty_print.indent -= 1;
+        if (info_.options.pretty_print) |*opp| opp.indent_level -= 1;
         try info_.options.writeIndent(writer);
     } else {
         try writer.print(
@@ -80,16 +80,14 @@ pub const Options = struct {
     /// Whether to preserve proto field names
     /// TODO
     preserve_proto_field_names: bool = false,
-    pretty_print: struct {
-        /// Wether to enable pretty printing
-        enabled: bool = false,
+    pretty_print: ?struct {
         /// The number of space chars to print per indent level.
-        num_spaces: u4 = 4,
+        indent_size: u4 = 4,
         /// The char to use for whitespace
         space_char: enum { space, tab } = .space,
         /// The current indent level
-        indent: u8 = 0,
-    } = .{},
+        indent_level: u8 = 0,
+    } = null,
 
     /// Whether to always print primitive fields. By default proto3 primitive
     /// fields with default values will be omitted in JSON output. For example, an
@@ -102,15 +100,15 @@ pub const Options = struct {
         options: Options,
         writer: anytype,
     ) !void {
-        if (options.pretty_print.enabled) {
+        if (options.pretty_print) |opp| {
             try writer.writeByte('\n');
-            const space_char: u8 = switch (options.pretty_print.space_char) {
+            const space_char: u8 = switch (opp.space_char) {
                 .space => ' ',
                 .tab => '\t',
             };
             try writer.writeByteNTimes(
                 space_char,
-                options.pretty_print.num_spaces * options.pretty_print.indent,
+                opp.indent_size * opp.indent_level,
             );
         }
     }
@@ -141,7 +139,7 @@ pub fn serializeImpl(
 
     try writer.writeByte('{');
     var child_options = options;
-    child_options.pretty_print.indent += 1;
+    if (child_options.pretty_print) |*cpp| cpp.indent_level += 1;
 
     var any_written: bool = false;
     if (flagsContain(desc.flags, MessageDescriptor.Flag.FLAG_MAP_TYPE)) {
@@ -162,7 +160,7 @@ pub fn serializeImpl(
             _ = try writer.write("\":")
         else
             _ = try writer.write(":");
-        if (child_options.pretty_print.enabled) _ = try writer.write(" ");
+        if (child_options.pretty_print != null) _ = try writer.write(" ");
         const value_field = desc.fields.slice()[1];
         assert(mem.eql(u8, "value", value_field.name.slice()));
         try serializeField(
@@ -191,7 +189,7 @@ pub fn serializeImpl(
         _ = try writer.print(
             \\"{}":
         , .{field.name});
-        if (child_options.pretty_print.enabled) _ = try writer.write(" ");
+        if (child_options.pretty_print != null) _ = try writer.write(" ");
         try serializeField(
             FieldInfo.init(
                 field,
@@ -234,7 +232,7 @@ fn serializeField(
     var child_info = info;
     if (child_info.is_repeated) {
         try writer.writeByte('[');
-        child_info.options.pretty_print.indent += 1;
+        if (child_info.options.pretty_print) |*cpp| cpp.indent_level += 1;
     }
     const field = child_info.field;
     const member = child_info.member;

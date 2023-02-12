@@ -184,7 +184,7 @@ fn runTest(allr: Allocator, request: *Request) !Response {
                 try pb.json.serialize(
                     test_message.?,
                     output.writer(),
-                    .{ .pretty_print = .{ .enabled = true, .num_spaces = 2 } },
+                    .{ .pretty_print = .{ .indent_size = 2 } },
                 );
                 response.set(.result__json_payload, String.init(try output.toOwnedSlice()));
             },
