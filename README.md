@@ -4,10 +4,16 @@
 A tool for generating zig code capable of de/serializing to the protocol buffer wire format.  Depends on [protoc](https://developers.google.com/protocol-buffers/docs/downloads) to parse .proto files.  
 
 # Status
-- [x] initial code generation
-- [x] initial deserialization from wire format
-- [x] initial serialization to wire format
-- [ ] recursive message types don't work yet [#1](../../issues/1). see [examples/recursive.proto](examples/recursive.proto)
+- [x] zig code generation
+  - [ ] recursive message types don't work yet [#1](../../issues/1). see [examples/recursive.proto](examples/recursive.proto)
+- [x] deserialization from wire format
+  - [ ] merging messages not yet implemented
+- [x] serialization to wire format
+- [x] initial serialization to json format
+- [w] conformance testing results: 1368/408/136  success/skip/fail.  all but 6 of the failures are due to json serialization. most of these failures are map field related. all 408 skipped are in these categories:
+  - [ ] parse json?
+  - [ ] output text format?
+  - [ ] output jspb format?
 
 # Usage
 
@@ -52,9 +58,7 @@ test "readme" {
     // Note - the package 'protobuf' below is src/lib.zig.  this package must
     // include itself. i hope to remove this requirement soon.  it can be
     // provided in build.zig or on the command line:
-    const std = @import("std");
-    const pb = @import("protobuf");
-    const Person = @import("../examples/gen/only_message.pb.zig").Person;
+    const Person = @import("generated").person.Person;
 
     // serialize to a writer
     const alloc = std.testing.allocator; // could be any zig std.mem.Allocator
