@@ -10,7 +10,7 @@ const protobuf = pb.protobuf;
 const ptrfmt = pb.common.ptrfmt;
 const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
 const FieldDescriptorProto = descr.FieldDescriptorProto;
-const Key = pbtypes.Key;
+const Tag = pbtypes.Tag;
 const tcommon = pb.testing;
 const lengthEncode = tcommon.lengthEncode;
 const encodeMessage = tcommon.encodeMessage;
@@ -87,15 +87,15 @@ test "examples/only_enum-1 - no deps" {
 
 test "nested lists" {
     const message = comptime encodeMessage(.{
-        Key.init(.LEN, 15), // CodeGeneratorRequest.proto_file
+        Tag.init(.LEN, 15), // CodeGeneratorRequest.proto_file
         lengthEncode(.{
-            Key.init(.LEN, 5), // FileDescriptorProto.enum_type
+            Tag.init(.LEN, 5), // FileDescriptorProto.enum_type
             lengthEncode(.{
-                Key.init(.LEN, 2), // EnumDescriptorProto.value
+                Tag.init(.LEN, 2), // EnumDescriptorProto.value
                 lengthEncode(.{
-                    Key.init(.LEN, 1), // EnumValueDescriptorProto.name
+                    Tag.init(.LEN, 1), // EnumValueDescriptorProto.name
                     lengthEncode(.{"field0"}),
-                    Key.init(.VARINT, 2), // EnumValueDescriptorProto.number
+                    Tag.init(.VARINT, 2), // EnumValueDescriptorProto.number
                     1,
                 }),
             }),
@@ -170,19 +170,19 @@ test "examples/all_types - system protoc" {
 
 test "message deinit" {
     const message = comptime encodeMessage(.{
-        Key.init(.LEN, 15), // CodeGeneratorRequest.proto_file
+        Tag.init(.LEN, 15), // CodeGeneratorRequest.proto_file
         lengthEncode(.{
-            Key.init(.LEN, 5), // FileDescriptorProto.enum_type
+            Tag.init(.LEN, 5), // FileDescriptorProto.enum_type
             lengthEncode(.{
-                Key.init(.LEN, 2), // EnumDescriptorProto.value
+                Tag.init(.LEN, 2), // EnumDescriptorProto.value
                 lengthEncode(.{
-                    Key.init(.LEN, 1), // EnumValueDescriptorProto.name
+                    Tag.init(.LEN, 1), // EnumValueDescriptorProto.name
                     lengthEncode(.{"field0"}),
-                    Key.init(.VARINT, 2), // EnumValueDescriptorProto.number
+                    Tag.init(.VARINT, 2), // EnumValueDescriptorProto.number
                     1,
                 }),
             }),
-            Key.init(.LEN, 12), // FileDescriptorProto.syntax
+            Tag.init(.LEN, 12), // FileDescriptorProto.syntax
             lengthEncode(.{"proto3"}),
         }),
     });
@@ -211,16 +211,16 @@ test "free oneof field when overwritten" {
     const T = oneof_2.TestAllTypesProto3;
 
     const message = comptime encodeMessage(.{
-        Key.init(.LEN, 113), // TestAllTypesProto3.oneof_field__oneof_string
+        Tag.init(.LEN, 113), // TestAllTypesProto3.oneof_field__oneof_string
         lengthEncode(.{"oneof_field__oneof_string"}),
-        Key.init(.LEN, 114), // TestAllTypesProto3.oneof_field__oneof_bytes
+        Tag.init(.LEN, 114), // TestAllTypesProto3.oneof_field__oneof_bytes
         lengthEncode(.{"oneof_field__oneof_bytes"}),
-        Key.init(.LEN, 112), // TestAllTypesProto3.oneof_field__oneof_nested_message
+        Tag.init(.LEN, 112), // TestAllTypesProto3.oneof_field__oneof_nested_message
         lengthEncode(.{
-            Key.init(.VARINT, 1), // TestAllTypesProto3.NestedMessage.a
+            Tag.init(.VARINT, 1), // TestAllTypesProto3.NestedMessage.a
             42,
         }),
-        Key.init(.VARINT, 111), // TestAllTypesProto3.oneof_field__oneof_uint32
+        Tag.init(.VARINT, 111), // TestAllTypesProto3.oneof_field__oneof_uint32
         42,
     });
 
@@ -234,12 +234,12 @@ test "deser group" {
     const T = group.Grouped;
 
     const message = comptime encodeMessage(.{
-        Key.init(.SGROUP, 201), // Group.Data .SGROUP
-        Key.init(.VARINT, 202), // Group.Data.group_int32
+        Tag.init(.SGROUP, 201), // Group.Data .SGROUP
+        Tag.init(.VARINT, 202), // Group.Data.group_int32
         202,
-        Key.init(.VARINT, 203), // Group.Data.group_uint32
+        Tag.init(.VARINT, 203), // Group.Data.group_uint32
         203,
-        Key.init(.EGROUP, 201), // Group.Data .EGROUP
+        Tag.init(.EGROUP, 201), // Group.Data .EGROUP
     });
     var ctx = protobuf.context(message, talloc);
     const m = try ctx.deserialize(&T.descriptor);

@@ -3,7 +3,7 @@ const mem = std.mem;
 const testing = std.testing;
 const pb = @import("protobuf");
 const types = pb.types;
-const Key = types.Key;
+const Tag = types.Tag;
 const protobuf = pb.protobuf;
 const String = pb.extern_types.String;
 
@@ -62,7 +62,7 @@ pub fn encodeMessage(comptime parts: anytype) []const u8 {
     var result: []const u8 = &.{};
     comptime for (std.meta.fields(@TypeOf(parts))) |f| {
         switch (f.type) {
-            Key => result = result ++
+            Tag => result = result ++
                 encodeVarint(usize, @field(parts, f.name).encode()),
             comptime_int => result = result ++
                 encodeVarint(usize, @field(parts, f.name)),

@@ -925,6 +925,6 @@ pub const IntRange = extern struct {
 };
 
 pub const MessageUnknownField = extern struct {
-    key: types.Key,
+    tag: types.Tag,
     data: String = String.initEmpty(),
 };

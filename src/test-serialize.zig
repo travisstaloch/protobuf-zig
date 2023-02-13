@@ -10,7 +10,7 @@ const descr = pb.descriptor;
 const protobuf = pb.protobuf;
 const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
 const FieldDescriptorProto = descr.FieldDescriptorProto;
-const Key = types.Key;
+const Tag = types.Tag;
 const tcommon = pb.testing;
 const encodeMessage = tcommon.encodeMessage;
 const lengthEncode = tcommon.lengthEncode;
@@ -41,19 +41,19 @@ test "basic ser" {
     try protobuf.serialize(&data.base, buf.writer());
 
     const message = comptime encodeMessage(.{
-        Key.init(.VARINT, 1), // FieldOptions.ctype
+        Tag.init(.VARINT, 1), // FieldOptions.ctype
         @enumToInt(descr.FieldOptions.CType.STRING),
-        Key.init(.VARINT, 5), // FieldOptions.lazy
+        Tag.init(.VARINT, 5), // FieldOptions.lazy
         true,
-        Key.init(.LEN, 999), // FieldOptions.uninterpreted_option
+        Tag.init(.LEN, 999), // FieldOptions.uninterpreted_option
         lengthEncode(.{
-            Key.init(.LEN, 3), // UninterpretedOption.identifier_value
+            Tag.init(.LEN, 3), // UninterpretedOption.identifier_value
             lengthEncode(.{"ident"}),
-            Key.init(.VARINT, 4), // UninterpretedOption.positive_int_value
+            Tag.init(.VARINT, 4), // UninterpretedOption.positive_int_value
             encodeVarint(u8, 42),
-            Key.init(.VARINT, 5), // UninterpretedOption.negative_int_value
+            Tag.init(.VARINT, 5), // UninterpretedOption.negative_int_value
             encodeVarint(i64, -42),
-            Key.init(.I64, 6), // UninterpretedOption.double_value
+            Tag.init(.I64, 6), // UninterpretedOption.double_value
             encodeFloat(f64, 42.0),
         }),
     });
@@ -138,7 +138,6 @@ test "ser all_types.proto" {
     // serialize the object to buf
     var buf = std.ArrayList(u8).init(talloc);
     defer buf.deinit();
-    // testing.log_level = .debug;
     try protobuf.serialize(&data.base, buf.writer());
 
     // deserialize from buf and check equality
@@ -171,7 +170,6 @@ test "ser oneof-2.proto" {
 
     // deserialize from buf and check equality
     var ctx = protobuf.context(buf.items, talloc);
-    // testing.log_level = .debug;
     const m = try ctx.deserialize(&T.descriptor);
     defer m.deinit(talloc);
     const data2 = try m.as(T);

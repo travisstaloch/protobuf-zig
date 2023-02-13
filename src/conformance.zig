@@ -180,12 +180,11 @@ fn runTest(allr: Allocator, request: *Request) !Response {
             .JSON => {
                 // response.set(.result__skipped, String.init("TODO JSON output"));
                 var output = std.ArrayList(u8).init(allr);
-                try pb.json.serialize(
-                    test_message.?,
-                    output.writer(),
-                    .{ .pretty_print = .{ .indent_size = 2 } },
+                try pb.json.serialize(test_message.?, output.writer(), .{});
+                response.set(
+                    .result__json_payload,
+                    String.init(try output.toOwnedSlice()),
                 );
-                response.set(.result__json_payload, String.init(try output.toOwnedSlice()));
             },
             .JSPB => {
                 response.set(.result__skipped, String.init("TODO JSPB output"));

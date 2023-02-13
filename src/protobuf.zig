@@ -6,7 +6,7 @@ const pb = @import("protobuf");
 const plugin = pb.plugin;
 const types = pb.types;
 const WireType = types.WireType;
-const Key = types.Key;
+const Tag = types.Tag;
 const extern_types = pb.extern_types;
 const List = extern_types.ArrayList;
 const ListMut = extern_types.ArrayListMut;
@@ -26,7 +26,7 @@ const afterLastIndexOf = common.afterLastIndexOf;
 const top_level = @This();
 
 pub const LocalError = error{
-    InvalidKey,
+    InvalidTag,
     NotEnoughBytesRead,
     Overflow,
     FieldMissing,
@@ -173,14 +173,14 @@ const Ctx = struct {
         return value;
     }
 
-    pub fn readKey(ctx: *Ctx) !Key {
-        const key = try ctx.readVarint128(usize, .int);
-        return Key{
-            .wire_type = std.meta.intToEnum(WireType, key & 0b111) catch {
-                std.log.err("readKey() invalid wire_type {}. key {}:0x{x}:0b{b:0>8} field_id {}", .{ @truncate(u3, key), key, key, key, key >> 3 });
-                return error.InvalidKey;
+    pub fn readTag(ctx: *Ctx) !Tag {
+        const tag = try ctx.readVarint128(u32, .int);
+        return Tag{
+            .wire_type = std.meta.intToEnum(WireType, tag & 0b111) catch {
+                std.log.err("readTag() invalid wire_type {}. tag {}:0x{x}:0b{b:0>8} field_id {}", .{ @truncate(u3, tag), tag, tag, tag, tag >> 3 });
+                return error.InvalidTag;
             },
-            .field_id = key >> 3,
+            .field_id = tag >> 3,
         };
     }
 
@@ -248,7 +248,7 @@ fn intRangeLookup(field_ids: List(c_uint), value: usize) !usize {
 
 // TODO reduce size: make data a [*]const u8, add len: u32, make prefix_len a u32
 const ScannedMember = struct {
-    key: Key,
+    tag: Tag,
     field: ?*const FieldDescriptor,
     data: []const u8,
     prefix_len: usize = 0,
@@ -488,14 +488,14 @@ fn parseRequiredMember(
     _ = maybe_clear;
     // TODO when there is a return FALSE make it an error.FieldMissing
 
-    const wire_type = scanned_member.key.wire_type;
+    const wire_type = scanned_member.tag.wire_type;
     const field = scanned_member.field orelse unreachable;
     std.log.debug(
         "parseRequiredMember() field={s} .{s} .{s} {}",
         .{
             field.name,
             @tagName(field.type),
-            @tagName(scanned_member.key.wire_type),
+            @tagName(scanned_member.tag.wire_type),
             ptrfmt(member),
         },
     );
@@ -632,7 +632,7 @@ fn parseMember(
     const field = scanned_member.field orelse {
         var ufield = try ctx.allocator.create(types.MessageUnknownField);
         ufield.* = .{
-            .key = scanned_member.key,
+            .tag = scanned_member.tag,
             .data = String.init(try ctx.allocator.dupe(u8, scanned_member.data)),
         };
         std.log.debug("unknown field data {}:'{}' prefix_len {}", .{
@@ -656,7 +656,7 @@ fn parseMember(
         else
             parseOptionalMember(scanned_member, member, message, ctx),
 
-        .LABEL_REPEATED => if (scanned_member.key.wire_type == .LEN and
+        .LABEL_REPEATED => if (scanned_member.tag.wire_type == .LEN and
             (flagsContain(field.flags, FieldFlag.FLAG_PACKED) or isPackableType(field.type)))
             parsePackedRepeatedMember(scanned_member, member, message, ctx)
         else
@@ -748,29 +748,29 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
     defer scanned_members.deinit(sfa2_alloc);
 
     while (true) {
-        const key = ctx.readKey() catch |e| switch (e) {
+        const tag = ctx.readTag() catch |e| switch (e) {
             error.EndOfStream => break,
             else => return e,
         };
-        std.log.debug("(scan) -- key wire_type=.{s} field_id={} --", .{
-            @tagName(key.wire_type),
-            key.field_id,
+        std.log.debug("(scan) -- tag wire_type=.{s} field_id={} --", .{
+            @tagName(tag.wire_type),
+            tag.field_id,
         });
         // proto2/3 field numbers start at 1
-        if (key.field_id == 0) return error.FieldMissing;
+        if (tag.field_id == 0) return error.FieldMissing;
 
         var mfield: ?*const FieldDescriptor = null;
-        if (last_field == null or last_field.?.id != key.field_id) {
-            if (intRangeLookup(desc.field_ids, key.field_id)) |field_index| {
+        if (last_field == null or last_field.?.id != tag.field_id) {
+            if (intRangeLookup(desc.field_ids, tag.field_id)) |field_index| {
                 std.log.debug(
                     "(scan) found field_id={} at index={}",
-                    .{ key.field_id, field_index },
+                    .{ tag.field_id, field_index },
                 );
                 mfield = &desc_fields[field_index];
                 last_field = mfield;
                 last_field_index = @intCast(u32, field_index);
             } else |_| {
-                std.log.debug("(scan) field_id {} not found", .{key.field_id});
+                std.log.debug("(scan) field_id {} not found", .{tag.field_id});
                 mfield = null;
                 n_unknown += 1;
             }
@@ -784,9 +784,9 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                 req_fields_bitmap.set(last_field_index);
         }
 
-        var sm: ScannedMember = .{ .key = key, .field = mfield, .data = ctx.data };
+        var sm: ScannedMember = .{ .tag = tag, .field = mfield, .data = ctx.data };
 
-        switch (key.wire_type) {
+        switch (tag.wire_type) {
             .VARINT => {
                 const startlen = ctx.data.len;
                 _ = try ctx.readVarint128(usize, .int);
@@ -823,16 +823,16 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
             },
             .SGROUP => {
                 const field = sm.field orelse unreachable;
-                const endkey = Key.init(.EGROUP, sm.key.field_id);
+                const endtag = Tag.init(.EGROUP, sm.tag.field_id);
                 var buf1 = [1]u8{0} ** 8;
                 var fbs = std.io.fixedBufferStream(&buf1);
-                try writeVarint128(usize, endkey.encode(), fbs.writer(), .int);
-                const endkey_bytes = buf1[0..fbs.pos];
+                try writeVarint128(usize, endtag.encode(), fbs.writer(), .int);
+                const endtag_bytes = buf1[0..fbs.pos];
                 // TODO - not 100% sure this is correct. might have to allow
                 // for nested groups with the same field number?  if so, need to
-                // adapt this search to allow for finding 'startkey's before
-                // endkey
-                sm.data.len = mem.indexOf(u8, ctx.data, endkey_bytes) orelse
+                // adapt this search to allow for finding 'starttag's before
+                // endtag
+                sm.data.len = mem.indexOf(u8, ctx.data, endtag_bytes) orelse
                     return deserializeErr(
                     "group missing end tag. field '{s}' {}",
                     .{ field.name, field.id },
@@ -854,7 +854,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
             if (field.label == .LABEL_REPEATED) {
                 // list ele type doesn't matter, just want to change len
                 const list = structMemberPtr(ListMut(u8), message, field.offset);
-                if (key.wire_type == .LEN and
+                if (tag.wire_type == .LEN and
                     (flagsContain(field.flags, FieldFlag.FLAG_PACKED) or
                     isPackableType(field.type)))
                 {
@@ -999,8 +999,8 @@ fn encodeRepeatedField(
     if (flagsContain(field.flags, FieldFlag.FLAG_PACKED)) {
         var cwriter = std.io.countingWriter(std.io.null_writer);
         try encodeRepeatedPacked(list, field, cwriter.writer());
-        const key = Key.init(.LEN, field.id);
-        try writeVarint128(usize, key.encode(), writer, .int);
+        const tag = Tag.init(.LEN, field.id);
+        try writeVarint128(usize, tag.encode(), writer, .int);
         try writeVarint128(usize, cwriter.bytes_written, writer, .int);
         try encodeRepeatedPacked(list, field, writer);
     } else {
@@ -1060,43 +1060,43 @@ fn encodeRequiredField(
     );
     switch (field.type) {
         .TYPE_ENUM, .TYPE_INT32, .TYPE_UINT32 => {
-            const key = Key.init(.VARINT, field.id);
-            try writeVarint128(usize, key.encode(), writer, .int);
+            const tag = Tag.init(.VARINT, field.id);
+            try writeVarint128(usize, tag.encode(), writer, .int);
             const value = mem.readIntLittle(u32, member[0..4]);
             try writeVarint128(u32, value, writer, .int);
         },
         .TYPE_SINT32 => {
-            const key = Key.init(.VARINT, field.id);
-            try writeVarint128(usize, key.encode(), writer, .int);
+            const tag = Tag.init(.VARINT, field.id);
+            try writeVarint128(usize, tag.encode(), writer, .int);
             const value = mem.readIntLittle(i32, member[0..4]);
             try writeVarint128(i32, value, writer, .sint);
         },
         .TYPE_SINT64 => {
-            const key = Key.init(.VARINT, field.id);
-            try writeVarint128(usize, key.encode(), writer, .int);
+            const tag = Tag.init(.VARINT, field.id);
+            try writeVarint128(usize, tag.encode(), writer, .int);
             const value = mem.readIntLittle(i64, member[0..8]);
             try writeVarint128(i64, value, writer, .sint);
         },
         .TYPE_UINT64, .TYPE_INT64 => {
-            const key = Key.init(.VARINT, field.id);
-            try writeVarint128(usize, key.encode(), writer, .int);
+            const tag = Tag.init(.VARINT, field.id);
+            try writeVarint128(usize, tag.encode(), writer, .int);
             const value = mem.readIntLittle(u64, member[0..8]);
             try writeVarint128(u64, value, writer, .int);
         },
         .TYPE_BOOL => {
-            const key = Key.init(.VARINT, field.id);
-            try writeVarint128(usize, key.encode(), writer, .int);
+            const tag = Tag.init(.VARINT, field.id);
+            try writeVarint128(usize, tag.encode(), writer, .int);
             try writeVarint128(u8, member[0], writer, .int);
         },
         .TYPE_DOUBLE, .TYPE_FIXED64, .TYPE_SFIXED64 => {
-            const key = Key.init(.I64, field.id);
-            try writeVarint128(usize, key.encode(), writer, .int);
+            const tag = Tag.init(.I64, field.id);
+            try writeVarint128(usize, tag.encode(), writer, .int);
             const value = mem.readIntLittle(u64, member[0..8]);
             try writer.writeIntLittle(u64, value);
         },
         .TYPE_FLOAT, .TYPE_FIXED32, .TYPE_SFIXED32 => {
-            const key = Key.init(.I32, field.id);
-            try writeVarint128(usize, key.encode(), writer, .int);
+            const tag = Tag.init(.I32, field.id);
+            try writeVarint128(usize, tag.encode(), writer, .int);
             const value = mem.readIntLittle(u32, member[0..4]);
             try writer.writeIntLittle(u32, value);
         },
@@ -1104,26 +1104,26 @@ fn encodeRequiredField(
             var cwriter = std.io.countingWriter(std.io.null_writer);
             const subm = ptrAlignCast(*const *Message, member);
             try serialize(subm.*, cwriter.writer());
-            const key = Key.init(.LEN, field.id);
-            try writeVarint128(usize, key.encode(), writer, .int);
+            const tag = Tag.init(.LEN, field.id);
+            try writeVarint128(usize, tag.encode(), writer, .int);
             try writeVarint128(usize, cwriter.bytes_written, writer, .int);
             try serialize(subm.*, writer);
         },
         .TYPE_STRING, .TYPE_BYTES => {
-            const key = Key.init(.LEN, field.id);
-            try writeVarint128(usize, key.encode(), writer, .int);
+            const tag = Tag.init(.LEN, field.id);
+            try writeVarint128(usize, tag.encode(), writer, .int);
             const s = ptrAlignCast(*const String, member);
             try writeVarint128(usize, s.len, writer, .int);
             std.log.debug("string {*}/{}:{x}", .{ s.items, s.len, s.len });
             _ = try writer.write(s.slice());
         },
         .TYPE_GROUP => {
-            const startkey = Key.init(.SGROUP, field.id);
-            try writeVarint128(usize, startkey.encode(), writer, .int);
+            const starttag = Tag.init(.SGROUP, field.id);
+            try writeVarint128(usize, starttag.encode(), writer, .int);
             const subm = ptrAlignCast(*const *Message, member);
             try serialize(subm.*, writer);
-            const endkey = Key.init(.EGROUP, field.id);
-            try writeVarint128(usize, endkey.encode(), writer, .int);
+            const endtag = Tag.init(.EGROUP, field.id);
+            try writeVarint128(usize, endtag.encode(), writer, .int);
         },
         else => todo("encodeRequiredField() field.type .{s}", .{field.type.tagName()}),
     }
@@ -1136,11 +1136,11 @@ fn encodeUnknownField(
 ) Error!void {
     _ = message;
     std.log.debug(
-        "encodeUnknownField() key wite_type=.{s} field_id={} data.len={}",
-        .{ @tagName(ufield.key.wire_type), ufield.key.field_id, ufield.data.len },
+        "encodeUnknownField() tag wite_type=.{s} field_id={} data.len={}",
+        .{ @tagName(ufield.tag.wire_type), ufield.tag.field_id, ufield.data.len },
     );
 
-    try writeVarint128(usize, ufield.key.encode(), writer, .int);
+    try writeVarint128(usize, ufield.tag.encode(), writer, .int);
     _ = try writer.write(ufield.data.slice());
 }
 
