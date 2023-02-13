@@ -227,6 +227,13 @@ pub const FieldInfo = struct {
     }
 };
 
+fn serializeFloat(float: anytype, writer: anytype) !void {
+    if (std.math.isNan(float) or std.math.isSignalNan(float))
+        _ = try writer.write("\"NaN\"")
+    else
+        try std.json.stringify(float, .{}, writer);
+}
+
 fn serializeField(
     info: FieldInfo,
     writer: anytype,
@@ -290,26 +297,26 @@ fn serializeField(
         => try serializeFieldImpl(child_info, u64, writer),
         .TYPE_FLOAT => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(f32), member);
-            for (list.slice()) |int, i| {
+            for (list.slice()) |float, i| {
                 if (i != 0) _ = try writer.writeByte(',');
                 try child_info.options.writeIndent(writer);
-                try std.json.stringify(int, .{}, writer);
+                try serializeFloat(float, writer);
             }
-        } else {
-            const v = @bitCast(f32, mem.readIntLittle(u32, member[0..4]));
-            try std.json.stringify(v, .{}, writer);
-        },
+        } else try serializeFloat(
+            @bitCast(f32, mem.readIntLittle(u32, member[0..4])),
+            writer,
+        ),
         .TYPE_DOUBLE => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(f64), member);
-            for (list.slice()) |int, i| {
+            for (list.slice()) |d, i| {
                 if (i != 0) _ = try writer.writeByte(',');
                 try child_info.options.writeIndent(writer);
-                try std.json.stringify(int, .{}, writer);
+                try serializeFloat(d, writer);
             }
-        } else {
-            const v = @bitCast(f64, mem.readIntLittle(u64, member[0..8]));
-            try std.json.stringify(v, .{}, writer);
-        },
+        } else try serializeFloat(
+            @bitCast(f64, mem.readIntLittle(u64, member[0..8])),
+            writer,
+        ),
         .TYPE_STRING => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(String), member);
             for (list.slice()) |s, i| {
