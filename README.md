@@ -9,8 +9,8 @@ A tool for generating zig code capable of de/serializing to the protocol buffer 
 - [x] deserialization from wire format
   - [ ] merging messages not yet implemented - 6 conformance failures
 - [x] serialization to wire format
-- [x] initial serialization to json format - 13 conformance failures
-- [w] conformance testing results: 1485/408/19 success/skip/fail.  the 408 skipped are in these categories:
+- [x] initial serialization to json format - 9 conformance failures
+- [w] conformance testing results: 1489/408/15 success/skip/fail.  the 408 skipped are in these categories:
   - [ ] json input
   - [ ] text format output
   - [ ] jspb format output
