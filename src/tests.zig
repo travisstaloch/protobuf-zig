@@ -38,7 +38,8 @@ test "readme" {
     try std.testing.expectEqual(zero.kind, zero_copy.kind);
 
     // serialize to json
-    const stderr = std.io.getStdErr().writer();
+    // const stderr = std.io.getStdErr().writer();
+    const stderr = std.io.null_writer;
     try pb.json.serialize(&zero.base, stderr, .{
         .pretty_print = .{ .indent_size = 2 },
     });

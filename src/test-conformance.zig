@@ -185,7 +185,6 @@ test "conf Required.Proto3.ProtobufInput.ValidDataMap.STRING.ENUM.Unordered.Json
     var buf = std.ArrayList(u8).init(talloc);
     defer buf.deinit();
     try pb.json.serialize(&m.base, buf.writer(), .{});
-    std.debug.print("{s}\n", .{buf.items});
     const expected =
         \\{"map_string_nested_enum":{"a":"BAR"}}
     ;
@@ -203,7 +202,6 @@ test "conf Required.Proto3.ProtobufInput.ValidDataMap.INT32.INT32.DuplicateKey.J
     var buf = std.ArrayList(u8).init(talloc);
     defer buf.deinit();
     try pb.json.serialize(&m.base, buf.writer(), .{});
-    std.debug.print("{s}\n", .{buf.items});
     const expected =
         \\{"map_int32_int32":{"1":1}}
     ;

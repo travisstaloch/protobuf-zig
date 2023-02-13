@@ -54,9 +54,6 @@ fn serializeFieldImpl(
             try info.options.writeIndent(writer);
             try writer.print("{}", .{int});
         }
-        var info_ = info;
-        if (info_.options.pretty_print) |*opp| opp.indent_level -= 1;
-        try info_.options.writeIndent(writer);
     } else {
         try writer.print(
             "{}",
@@ -82,6 +79,8 @@ pub const Options = struct {
         space_char: enum { space, tab } = .space,
         /// The current indent level
         indent_level: u8 = 0,
+        /// After a colon, should whitespace be inserted?
+        separator: bool = true,
     } = null,
 
     /// Whether to always print primitive fields. By default proto3 primitive
@@ -141,7 +140,7 @@ pub fn serializeImpl(
     var any_written: bool = false;
     if (flagsContain(desc.flags, MessageDescriptor.Flag.FLAG_MAP_TYPE)) {
         const key_field = desc.fields.slice()[0];
-        assert(mem.eql(u8, "key", key_field.name.slice()));
+        assert(key_field.id == 1);
         if (key_field.type != .TYPE_STRING)
             _ = try writer.write("\"");
         try serializeField(
@@ -158,14 +157,15 @@ pub fn serializeImpl(
             _ = try writer.write("\":")
         else
             _ = try writer.write(":");
-        if (child_options.pretty_print != null) _ = try writer.write(" ");
+        if (child_options.pretty_print) |cpp|
+            _ = try writer.write(" "[0..@boolToInt(cpp.separator)]);
         const value_field = desc.fields.slice()[1];
-        assert(mem.eql(u8, "value", value_field.name.slice()));
+        assert(value_field.id == 2);
         try serializeField(
             FieldInfo.init(
                 value_field,
                 buf.ptr + value_field.offset,
-                false,
+                value_field.label == .LABEL_REPEATED,
                 child_options,
             ),
             writer,
@@ -188,7 +188,8 @@ pub fn serializeImpl(
         _ = try writer.print(
             \\"{}":
         , .{field.name});
-        if (child_options.pretty_print != null) _ = try writer.write(" ");
+        if (child_options.pretty_print) |cpp|
+            _ = try writer.write(" "[0..@boolToInt(cpp.separator)]);
 
         try serializeField(
             FieldInfo.init(
@@ -357,7 +358,7 @@ fn serializeField(
                     const subm = list.items[i];
                     const desc = field.getDescriptor(MessageDescriptor);
                     const key_field = desc.fields.slice()[0];
-                    assert(mem.eql(u8, "key", key_field.name.slice()));
+                    assert(key_field.id == 1);
                     namebuf.items.len = 0;
                     try serializeField(
                         FieldInfo.init(

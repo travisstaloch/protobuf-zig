@@ -129,6 +129,7 @@ const Ctx = struct {
     data: []const u8,
     data_start: []const u8,
     allocator: Allocator,
+    // TODO add an arena or other allocator for temporary data
 
     pub fn init(data: []const u8, allocator: Allocator) Ctx {
         return .{
