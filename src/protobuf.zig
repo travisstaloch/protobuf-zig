@@ -154,7 +154,7 @@ const Ctx = struct {
         return @ptrToInt(ctx.data.ptr) - @ptrToInt(ctx.data_start.ptr);
     }
 
-    pub fn skip(ctx: *Ctx, len: usize) !void {
+    pub fn skip(ctx: *Ctx, len: u32) !void {
         if (len > ctx.data.len) return error.NotEnoughBytesRead;
         ctx.data = ctx.data[len..];
     }
@@ -169,7 +169,7 @@ const Ctx = struct {
         var ctxfbs = ctx.fbs();
         const reader = ctxfbs.reader();
         const value = try top_level.readVarint128(T, reader, mode);
-        try ctx.skip(ctxfbs.pos);
+        try ctx.skip(@intCast(u32, ctxfbs.pos));
         return value;
     }
 
@@ -184,10 +184,10 @@ const Ctx = struct {
         };
     }
 
-    pub fn scanLengthPrefixedData(ctx: *Ctx) ![2]usize {
-        const startlen = ctx.data.len;
-        const len = try ctx.readVarint128(usize, .int);
-        return .{ startlen - ctx.data.len, len };
+    pub fn scanLengthPrefixedData(ctx: *Ctx) ![2]u32 {
+        const startlen = @intCast(u32, ctx.data.len);
+        const len = try ctx.readVarint128(u32, .int);
+        return .{ startlen - @intCast(u32, ctx.data.len), len };
     }
 };
 
@@ -246,16 +246,20 @@ fn intRangeLookup(field_ids: List(c_uint), value: usize) !usize {
     return error.NotFound;
 }
 
-// TODO reduce size: make data a [*]const u8, add len: u32, make prefix_len a u32
 const ScannedMember = struct {
     tag: Tag,
     field: ?*const FieldDescriptor,
-    data: []const u8,
-    prefix_len: usize = 0,
+    data: [*]const u8,
+    data_len: u32,
+    prefix_len: u32 = 0,
 
-    pub fn readVarint128(sm: ScannedMember, comptime T: type, comptime mode: IntMode) !T {
-        var stream = std.io.fixedBufferStream(sm.data);
-        return top_level.readVarint128(T, stream.reader(), mode);
+    pub fn readVarint128(
+        sm: ScannedMember,
+        comptime T: type,
+        comptime mode: IntMode,
+    ) !T {
+        var fbs = std.io.fixedBufferStream(sm.dataSlice());
+        return top_level.readVarint128(T, fbs.reader(), mode);
     }
 
     fn maxB128Numbers(data: []const u8) usize {
@@ -264,24 +268,28 @@ const ScannedMember = struct {
         return result;
     }
 
+    pub inline fn dataSlice(sm: ScannedMember) []const u8 {
+        return sm.data[0..sm.data_len];
+    }
+
     pub fn countPackedElements(sm: ScannedMember, typ: FieldDescriptorProto.Type) !usize {
         switch (typ) {
             .TYPE_SFIXED32,
             .TYPE_FIXED32,
             .TYPE_FLOAT,
             => {
-                if (sm.data.len % 4 != 0) {
+                if (sm.data_len % 4 != 0) {
                     std.log.err("length must be a multiple of 4 for fixed-length 32-bit types", .{});
                     return error.InvalidType;
                 }
-                return sm.data.len / 4;
+                return sm.data_len / 4;
             },
             .TYPE_SFIXED64, .TYPE_FIXED64, .TYPE_DOUBLE => {
-                if (sm.data.len % 8 != 0) {
+                if (sm.data_len % 8 != 0) {
                     std.log.err("length must be a multiple of 8 for fixed-length 64-bit types", .{});
                     return error.InvalidType;
                 }
-                return sm.data.len / 8;
+                return sm.data_len / 8;
             },
             .TYPE_ENUM,
             .TYPE_INT32,
@@ -290,8 +298,8 @@ const ScannedMember = struct {
             .TYPE_INT64,
             .TYPE_SINT64,
             .TYPE_UINT64,
-            => return maxB128Numbers(sm.data),
-            .TYPE_BOOL => return sm.data.len,
+            => return maxB128Numbers(sm.dataSlice()),
+            .TYPE_BOOL => return sm.data_len,
             .TYPE_STRING,
             .TYPE_BYTES,
             .TYPE_MESSAGE,
@@ -327,7 +335,7 @@ fn parsePackedRepeatedMember(
 ) !void {
     const field = scanned_member.field orelse unreachable;
     std.log.debug("parsePackedRepeatedMember() '{s}'", .{field.name});
-    var fbs = std.io.fixedBufferStream(scanned_member.data);
+    var fbs = std.io.fixedBufferStream(scanned_member.dataSlice());
     const reader = fbs.reader();
     while (true) {
         const errunion = switch (field.type) {
@@ -560,7 +568,7 @@ fn parseRequiredMember(
         .TYPE_STRING, .TYPE_BYTES => {
             // TODO free if existing
             if (wire_type != .LEN) return error.FieldMissing;
-            const bytes = try ctx.allocator.dupe(u8, scanned_member.data);
+            const bytes = try ctx.allocator.dupe(u8, scanned_member.dataSlice());
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(String), String.init(bytes));
             } else {
@@ -581,7 +589,7 @@ fn parseRequiredMember(
 
             std.log.debug(
                 "parsing message field '{s}' len {} member {}",
-                .{ field.name, scanned_member.data.len, ptrfmt(member) },
+                .{ field.name, scanned_member.data_len, ptrfmt(member) },
             );
 
             if (field.descriptor == null) {
@@ -592,7 +600,7 @@ fn parseRequiredMember(
                 );
             }
 
-            var limctx = ctx.withData(scanned_member.data);
+            var limctx = ctx.withData(scanned_member.dataSlice());
             const field_desc = field.getDescriptor(MessageDescriptor);
 
             std.log.info(".{s} {s} sizeof={}", .{
@@ -611,7 +619,7 @@ fn parseRequiredMember(
         },
         .TYPE_GROUP => {
             const field_desc = field.getDescriptor(MessageDescriptor);
-            var limctx = ctx.withData(scanned_member.data);
+            var limctx = ctx.withData(scanned_member.dataSlice());
             if (field.label == .LABEL_REPEATED) {
                 const subm = try deserialize(field_desc, &limctx);
                 listAppend(member, ListMut(*Message), subm);
@@ -633,7 +641,10 @@ fn parseMember(
         var ufield = try ctx.allocator.create(types.MessageUnknownField);
         ufield.* = .{
             .tag = scanned_member.tag,
-            .data = String.init(try ctx.allocator.dupe(u8, scanned_member.data)),
+            .data = String.init(try ctx.allocator.dupe(
+                u8,
+                scanned_member.dataSlice(),
+            )),
         };
         std.log.debug("unknown field data {}:'{}' prefix_len {}", .{
             ufield.data.len,
@@ -784,13 +795,18 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                 req_fields_bitmap.set(last_field_index);
         }
 
-        var sm: ScannedMember = .{ .tag = tag, .field = mfield, .data = ctx.data };
+        var sm: ScannedMember = .{
+            .tag = tag,
+            .field = mfield,
+            .data = ctx.data.ptr,
+            .data_len = @intCast(u32, ctx.data.len),
+        };
 
         switch (tag.wire_type) {
             .VARINT => {
                 const startlen = ctx.data.len;
                 _ = try ctx.readVarint128(usize, .int);
-                sm.data.len = startlen - ctx.data.len;
+                sm.data_len = @intCast(u32, startlen - ctx.data.len);
             },
             .I64 => {
                 if (ctx.data.len < 8) {
@@ -800,7 +816,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                         error.InvalidData,
                     );
                 }
-                sm.data.len = 8;
+                sm.data_len = 8;
                 ctx.skip(8) catch unreachable;
             },
             .I32 => {
@@ -811,15 +827,15 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                         error.InvalidData,
                     );
                 }
-                sm.data.len = 4;
+                sm.data_len = 4;
                 ctx.skip(4) catch unreachable;
             },
             .LEN => {
                 const lens = try ctx.scanLengthPrefixedData();
-                sm.data = sm.data[lens[0]..];
-                sm.data.len = lens[1];
+                sm.data = sm.data + lens[0];
+                sm.data_len = lens[1];
                 sm.prefix_len = lens[0];
-                try ctx.skip(sm.data.len);
+                try ctx.skip(sm.data_len);
             },
             .SGROUP => {
                 const field = sm.field orelse unreachable;
@@ -832,13 +848,13 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                 // for nested groups with the same field number?  if so, need to
                 // adapt this search to allow for finding 'starttag's before
                 // endtag
-                sm.data.len = mem.indexOf(u8, ctx.data, endtag_bytes) orelse
+                sm.data_len = @intCast(u32, mem.indexOf(u8, ctx.data, endtag_bytes) orelse
                     return deserializeErr(
                     "group missing end tag. field '{s}' {}",
                     .{ field.name, field.id },
                     error.InvalidData,
-                );
-                try ctx.skip(sm.data.len + fbs.pos);
+                ));
+                try ctx.skip(sm.data_len + @intCast(u32, fbs.pos));
             },
             .EGROUP => {},
         }
