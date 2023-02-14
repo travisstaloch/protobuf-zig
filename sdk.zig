@@ -16,9 +16,14 @@ pub const GenStep = struct {
         files: []const []const u8,
     ) !*GenStep {
         const self = b.allocator.create(GenStep) catch unreachable;
+        const cache_root = std.fs.path.resolve(
+            b.allocator,
+            &.{b.cache_root.path orelse "."},
+        ) catch @panic("OOM");
+        const protobuf_zig_path = "protobuf-zig";
         const cache_path = try std.fs.path.join(
             b.allocator,
-            &.{ b.cache_root, "protobuf-zig" },
+            &.{ cache_root, protobuf_zig_path },
         );
         const lib_path = try std.fs.path.join(
             b.allocator,
@@ -51,7 +56,7 @@ pub const GenStep = struct {
         const run_cmd = exe.run();
         run_cmd.step.dependOn(&exe.step);
 
-        try b.makePath(cache_path);
+        try b.cache_root.handle.makePath(protobuf_zig_path);
 
         run_cmd.addArgs(&.{ "--zig_out", cache_path, "-I", "examples" });
 
