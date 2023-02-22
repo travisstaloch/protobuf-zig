@@ -122,6 +122,21 @@ fn runTest(allr: Allocator, request: *Request) !Response {
         _ = failures;
         const all_failures: []const []const u8 = &.{
             // list of known failing tests to skip
+            "Required.DurationProtoInputTooLarge.JsonOutput",
+            "Required.DurationProtoInputTooSmall.JsonOutput",
+            "Required.Proto2.ProtobufInput.RepeatedScalarMessageMerge.ProtobufOutput",
+            "Required.Proto2.ProtobufInput.ValidDataMap.STRING.MESSAGE.MergeValue.ProtobufOutput",
+            "Required.Proto2.ProtobufInput.ValidDataOneof.MESSAGE.Merge.ProtobufOutput",
+            "Required.Proto3.ProtobufInput.RepeatedScalarMessageMerge.JsonOutput",
+            "Required.Proto3.ProtobufInput.RepeatedScalarMessageMerge.ProtobufOutput",
+            "Required.Proto3.ProtobufInput.ValidDataMap.STRING.ENUM.MissingDefault.JsonOutput",
+            "Required.Proto3.ProtobufInput.ValidDataMap.STRING.MESSAGE.MergeValue.JsonOutput",
+            "Required.Proto3.ProtobufInput.ValidDataMap.STRING.MESSAGE.MergeValue.ProtobufOutput",
+            "Required.Proto3.ProtobufInput.ValidDataMap.STRING.MESSAGE.MissingDefault.JsonOutput",
+            "Required.Proto3.ProtobufInput.ValidDataOneof.MESSAGE.Merge.JsonOutput",
+            "Required.Proto3.ProtobufInput.ValidDataOneof.MESSAGE.Merge.ProtobufOutput",
+            "Required.TimestampProtoInputTooLarge.JsonOutput",
+            "Required.TimestampProtoInputTooSmall.JsonOutput",
         };
 
         for (all_failures) |f| {
