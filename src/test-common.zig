@@ -108,7 +108,7 @@ pub fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
             "extern-types.ArrayList",
         ) != null) {
             try std.testing.expectEqual(data.len, data2.len);
-            for (data.slice()) |it, i|
+            for (data.slice(), 0..) |it, i|
                 try expectEqual(@TypeOf(it), it, data2.items[i]);
         } else {
             const fe = types.FieldEnum(T);
@@ -127,7 +127,7 @@ pub fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
                         const ffe = comptime types.FieldEnum(F);
                         const ftags = comptime std.meta.tags(ffe);
                         inline for (T.oneof_field_ids) |oneof_ids| {
-                            inline for (comptime oneof_ids.slice()) |oneof_id, i| {
+                            inline for (comptime oneof_ids.slice(), 0..) |oneof_id, i| {
                                 const ftag = ftags[i];
                                 try testing.expect(data.base.hasFieldId(oneof_id) ==
                                     data2.base.hasFieldId(oneof_id));

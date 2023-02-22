@@ -168,18 +168,18 @@ fn fieldIndicesByName(comptime field_descriptors: []const FieldDescriptor) []con
             return std.mem.lessThan(u8, a[1], b[1]);
         }
     }.lessThan;
-    for (field_descriptors) |fd, i|
+    for (field_descriptors, 0..) |fd, i|
         tups[i] = .{ @intCast(c_uint, i), fd.name.slice() };
     std.sort.sort(Tup, &tups, {}, lessThan);
     var result: [field_descriptors.len]c_uint = undefined;
-    for (tups) |tup, i| result[i] = tup[0];
+    for (tups, 0..) |tup, i| result[i] = tup[0];
     return &result;
 }
 
 fn enumValuesByNumber(comptime T: type) []const EnumValue {
     const tags = std.meta.tags(T);
     var result: [tags.len]EnumValue = undefined;
-    for (tags) |tag, i| {
+    for (tags, 0..) |tag, i| {
         result[i] = .{
             .value = @enumToInt(tag),
             .name = String.init(@tagName(tag)),
@@ -252,7 +252,7 @@ pub const EnumDescriptor = extern struct {
         const values = T.enum_values_by_number;
         comptime {
             const tfields = std.meta.fields(T);
-            for (values) |field, i| {
+            for (values, 0..) |field, i| {
                 const fname = field.name.slice();
                 const tfield = tfields[i];
                 if (field.value != tfield.value)
@@ -403,7 +403,7 @@ pub const MessageDescriptor = extern struct {
                 // TODO remove this hack whichjust works around dependency loop
                 // along with field.recursive_descriptor
                 var fields = result.fields.items[0..result.fields.len].*;
-                for (fields) |field, i| {
+                for (fields, 0..) |field, i| {
                     if (field.recursive_descriptor) {
                         var tmp = fields[i];
                         tmp.descriptor = &result;
@@ -582,7 +582,7 @@ pub const Message = extern struct {
         try writer.print("{s}{{", .{desc.name});
         const fields = desc.fields;
         const bytes = @ptrCast([*]const u8, message);
-        for (fields.slice()) |f, i| {
+        for (fields.slice(), 0..) |f, i| {
             const member = bytes + f.offset;
             const field_id = desc.field_ids.items[i];
             // skip if optional field and not present
@@ -593,7 +593,7 @@ pub const Message = extern struct {
                         const list = ptrAlignCast(*const ListMut(*Message), member);
                         if (list.len == 0) continue; // prevent extra commas
                         try writer.print(".{s} = &.{{", .{field_name});
-                        for (list.slice()) |it, j| {
+                        for (list.slice(), 0..) |it, j| {
                             if (j != 0) _ = try writer.write(", ");
                             try Message.formatMessage(it, writer);
                         }
@@ -608,7 +608,7 @@ pub const Message = extern struct {
                         const list = ptrAlignCast(*const ListMutScalar(String), member);
                         if (list.len == 0) continue; // prevent extra commas
                         try writer.print(".{s} = &.{{", .{field_name});
-                        for (list.slice()) |it, j| {
+                        for (list.slice(), 0..) |it, j| {
                             if (j != 0) _ = try writer.write(", ");
                             try writer.print("\"{}\"", .{it});
                         }
@@ -620,7 +620,7 @@ pub const Message = extern struct {
                         const list = ptrAlignCast(*const ListMutScalar(bool), member);
                         if (list.len == 0) continue; // prevent extra commas
                         try writer.print(".{s} = &.{{", .{field_name});
-                        for (list.slice()) |it, j| {
+                        for (list.slice(), 0..) |it, j| {
                             if (j != 0) _ = try writer.write(", ");
                             try writer.print("{}", .{it});
                         }
@@ -632,7 +632,7 @@ pub const Message = extern struct {
                         const list = ptrAlignCast(*const ListMutScalar(i32), member);
                         if (list.len == 0) continue; // prevent extra commas
                         try writer.print(".{s} = &.{{", .{field_name});
-                        for (list.slice()) |it, j| {
+                        for (list.slice(), 0..) |it, j| {
                             if (j != 0) _ = try writer.write(", ");
                             try writer.print("{}", .{it});
                         }
@@ -644,7 +644,7 @@ pub const Message = extern struct {
                         const list = ptrAlignCast(*const ListMutScalar(u32), member);
                         if (list.len == 0) continue; // prevent extra commas
                         try writer.print(".{s} = &.{{", .{field_name});
-                        for (list.slice()) |it, j| {
+                        for (list.slice(), 0..) |it, j| {
                             if (j != 0) _ = try writer.write(", ");
                             try writer.print("{}", .{it});
                         }
@@ -656,7 +656,7 @@ pub const Message = extern struct {
                         const list = ptrAlignCast(*const ListMutScalar(i64), member);
                         if (list.len == 0) continue; // prevent extra commas
                         try writer.print(".{s} = &.{{", .{field_name});
-                        for (list.slice()) |it, j| {
+                        for (list.slice(), 0..) |it, j| {
                             if (j != 0) _ = try writer.write(", ");
                             try writer.print("{}", .{it});
                         }
@@ -668,7 +668,7 @@ pub const Message = extern struct {
                         const list = ptrAlignCast(*const ListMutScalar(u64), member);
                         if (list.len == 0) continue; // prevent extra commas
                         try writer.print(".{s} = &.{{", .{field_name});
-                        for (list.slice()) |it, j| {
+                        for (list.slice(), 0..) |it, j| {
                             if (j != 0) _ = try writer.write(", ");
                             try writer.print("{}", .{it});
                         }
@@ -680,7 +680,7 @@ pub const Message = extern struct {
                         const list = ptrAlignCast(*const ListMutScalar(f32), member);
                         if (list.len == 0) continue; // prevent extra commas
                         try writer.print(".{s} = &.{{", .{field_name});
-                        for (list.slice()) |it, j| {
+                        for (list.slice(), 0..) |it, j| {
                             if (j != 0) _ = try writer.write(", ");
                             try writer.print("{}", .{it});
                         }
@@ -692,7 +692,7 @@ pub const Message = extern struct {
                         const list = ptrAlignCast(*const ListMutScalar(f64), member);
                         if (list.len == 0) continue; // prevent extra commas
                         try writer.print(".{s} = &.{{", .{field_name});
-                        for (list.slice()) |it, j| {
+                        for (list.slice(), 0..) |it, j| {
                             if (j != 0) _ = try writer.write(", ");
                             try writer.print("{}", .{it});
                         }

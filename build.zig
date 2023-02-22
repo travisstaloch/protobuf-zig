@@ -30,6 +30,7 @@ pub fn build(b: *std.build.Builder) !void {
     const protobuf_mod = b.createModule(.{
         .source_file = .{ .path = "src/lib.zig" },
     });
+    try protobuf_mod.dependencies.put("protobuf", protobuf_mod);
 
     const build_options = b.addOptions();
     build_options.addOption(std.log.Level, "log_level", log_level);
@@ -54,10 +55,7 @@ pub fn build(b: *std.build.Builder) !void {
     });
     protoc_zig.install();
     protoc_zig.addOptions("build_options", build_options);
-    protoc_zig.addAnonymousModule("protobuf", .{
-        .source_file = .{ .path = "src/lib.zig" },
-        .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
-    });
+    protoc_zig.addModule("protobuf", protobuf_mod);
 
     const run_cmd = protoc_zig.run();
     run_cmd.step.dependOn(b.getInstallStep());
@@ -89,10 +87,7 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    main_tests.addAnonymousModule("protobuf", .{
-        .source_file = .{ .path = "src/lib.zig" },
-        .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
-    });
+    main_tests.addModule("protobuf", protobuf_mod);
     main_tests.addAnonymousModule("generated", .{
         .source_file = gen_step.module.source_file,
         .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
@@ -112,10 +107,7 @@ pub fn build(b: *std.build.Builder) !void {
     });
     conformance_exe.install();
     conformance_exe.addOptions("build_options", build_options);
-    conformance_exe.addAnonymousModule("protobuf", .{
-        .source_file = .{ .path = "src/lib.zig" },
-        .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
-    });
+    conformance_exe.addModule("protobuf", protobuf_mod);
     conformance_exe.addAnonymousModule("generated", .{
         .source_file = gen_step.module.source_file,
         .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
