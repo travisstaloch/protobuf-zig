@@ -49,7 +49,7 @@ fn serializeFieldImpl(
 ) !void {
     if (info.is_repeated) {
         const list = ptrAlignCast(*const List(T), info.member);
-        for (list.slice()) |int, i| {
+        for (list.slice(), 0..) |int, i| {
             if (i != 0) _ = try writer.writeByte(',');
             try info.options.writeIndent(writer);
             try writer.print("{}", .{int});
@@ -264,7 +264,7 @@ fn serializeField(
         => try serializeFieldImpl(child_info, u32, writer),
         .TYPE_BOOL => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(u32), member);
-            for (list.slice()) |int, i| {
+            for (list.slice(), 0..) |int, i| {
                 if (i != 0) _ = try writer.writeByte(',');
                 try child_info.options.writeIndent(writer);
                 try writer.print("{}", .{int != 0});
@@ -276,7 +276,7 @@ fn serializeField(
             const enumdesc = field.getDescriptor(types.EnumDescriptor);
             if (child_info.is_repeated) {
                 const list = ptrAlignCast(*const List(i32), member);
-                for (list.slice()) |int, i| {
+                for (list.slice(), 0..) |int, i| {
                     if (i != 0) _ = try writer.writeByte(',');
                     const tagname = try enumTagname(enumdesc, int);
                     try child_info.options.writeIndent(writer);
@@ -297,7 +297,7 @@ fn serializeField(
         => try serializeFieldImpl(child_info, u64, writer),
         .TYPE_FLOAT => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(f32), member);
-            for (list.slice()) |float, i| {
+            for (list.slice(), 0..) |float, i| {
                 if (i != 0) _ = try writer.writeByte(',');
                 try child_info.options.writeIndent(writer);
                 try serializeFloat(float, writer);
@@ -308,7 +308,7 @@ fn serializeField(
         ),
         .TYPE_DOUBLE => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(f64), member);
-            for (list.slice()) |d, i| {
+            for (list.slice(), 0..) |d, i| {
                 if (i != 0) _ = try writer.writeByte(',');
                 try child_info.options.writeIndent(writer);
                 try serializeFloat(d, writer);
@@ -319,7 +319,7 @@ fn serializeField(
         ),
         .TYPE_STRING => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(String), member);
-            for (list.slice()) |s, i| {
+            for (list.slice(), 0..) |s, i| {
                 if (i != 0) _ = try writer.writeByte(',');
                 try child_info.options.writeIndent(writer);
                 try std.json.stringify(s.slice(), .{}, writer);
@@ -330,7 +330,7 @@ fn serializeField(
         },
         .TYPE_BYTES => if (child_info.is_repeated) {
             const list = ptrAlignCast(*const List(String), member);
-            for (list.slice()) |s, i| {
+            for (list.slice(), 0..) |s, i| {
                 if (i != 0) _ = try writer.writeByte(',');
                 try child_info.options.writeIndent(writer);
                 try b64Encode(s, writer);
@@ -342,7 +342,7 @@ fn serializeField(
         .TYPE_MESSAGE, .TYPE_GROUP => if (child_info.is_repeated) {
             if (!is_map) {
                 const list = ptrAlignCast(*const List(*Message), member);
-                for (list.slice()) |subm, i| {
+                for (list.slice(), 0..) |subm, i| {
                     if (i != 0) _ = try writer.writeByte(',');
                     try child_info.options.writeIndent(writer);
                     try serializeImpl(subm, writer, child_info.options, arena);

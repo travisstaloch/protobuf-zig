@@ -219,7 +219,7 @@ pub fn genMessage(
         }
 
         // gen oneof union fields separately because they are grouped by field.oneof_index
-        for (message.oneof_decl.slice()) |_, i| {
+        for (message.oneof_decl.slice(), 0..) |_, i| {
             _ = try ch_writer.write("union {\n");
             for (message.field.slice()) |field| {
                 if (field.has(.oneof_index) and field.oneof_index == i) {
@@ -396,7 +396,7 @@ pub fn genMessage(
         _ = try cc_writer.write("\nstatic const uint32_t ");
         try writeCName(cc_writer, proto_file.package, node, ctx, null);
         try cc_writer.print("__field_ids[{}] = {{ ", .{message.field.len});
-        for (message.field.slice()) |field, i| {
+        for (message.field.slice(), 0..) |field, i| {
             if (i != 0) _ = try cc_writer.write(", ");
             try cc_writer.print("{}", .{field.number});
         }

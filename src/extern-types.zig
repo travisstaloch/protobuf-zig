@@ -127,7 +127,7 @@ pub fn ListMixins(comptime T: type, comptime Self: type, comptime Slice: type) t
             // try writer.print("{}/{}/{}", .{ ptrfmt(l.items), l.len, l.cap });
             _ = try writer.write("{");
             if (l.len != 0) {
-                for (l.slice()) |it, i| {
+                for (l.slice(), 0..) |it, i| {
                     if (i != 0) _ = try writer.write(", ");
                     try writer.print("{}", .{it});
                 }

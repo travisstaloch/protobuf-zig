@@ -242,7 +242,7 @@ fn genericMessageInit(desc: *const MessageDescriptor) Message {
 }
 
 fn intRangeLookup(field_ids: List(c_uint), value: usize) !usize {
-    for (field_ids.slice()) |num, i|
+    for (field_ids.slice(), 0..) |num, i|
         if (num == value) return i;
     return error.NotFound;
 }
@@ -887,7 +887,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
     // lengths are known.
     // --
     var missing_any_required = false;
-    for (desc_fields) |field, i| {
+    for (desc_fields, 0..) |field, i| {
         if (field.label == .LABEL_REPEATED) {
             const size = pb.protobuf.repeatedEleSize(field.type);
             // list ele type doesn't matter, just want to change len

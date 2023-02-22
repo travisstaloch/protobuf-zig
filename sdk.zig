@@ -100,7 +100,7 @@ pub const GenStep = struct {
                 );
                 return error.InvalidIdentifier;
             }
-            for (name[1..]) |c, i| {
+            for (name[1..], 0..) |c, i| {
                 if (!std.ascii.isAlphanumeric(c)) buf[i + 1] = '_';
             }
             const path = if (std.mem.startsWith(u8, source.path, "examples/"))

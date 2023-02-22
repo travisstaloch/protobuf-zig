@@ -220,7 +220,7 @@ fn genFieldIds(
         try writer.print("{}", .{field.number});
         nwritten += 1;
     }
-    for (message.oneof_decl.slice()) |_, i| {
+    for (message.oneof_decl.slice(), 0..) |_, i| {
         for (message.field.slice()) |field| {
             if (field.has(.oneof_index) and field.oneof_index == i) {
                 if (nwritten != 0) _ = try writer.write(", ");
@@ -264,7 +264,7 @@ pub fn genMessage(
     }
 
     // gen oneof union fields separately because they are grouped by field.oneof_index
-    for (message.oneof_decl.slice()) |oneof, i| {
+    for (message.oneof_decl.slice(), 0..) |oneof, i| {
         try zig_writer.print("{s}: extern union {{\n", .{oneof.name});
         for (message.field.slice()) |field| {
             if (field.has(.oneof_index) and field.oneof_index == i) {
@@ -314,7 +314,7 @@ pub fn genMessage(
         _ = try zig_writer.write(
             "pub const oneof_field_ids = [_]ArrayList(c_uint){\n",
         );
-        for (message.oneof_decl.slice()) |_, i| {
+        for (message.oneof_decl.slice(), 0..) |_, i| {
             _ = try zig_writer.write("ArrayList(c_uint).init(&.{");
             var nwritten: usize = 0;
             for (message.field.slice()) |field| {

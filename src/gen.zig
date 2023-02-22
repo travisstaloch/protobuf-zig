@@ -142,7 +142,7 @@ pub fn writeTitleCase(writer: anytype, name: String) !void {
 }
 
 fn normalizePackageName(package_name: []u8) void {
-    for (package_name) |c, i| {
+    for (package_name, 0..) |c, i| {
         if (c == '.' or c == '-' or c == '/')
             package_name[i] = '_';
     }

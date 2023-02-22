@@ -85,7 +85,7 @@ pub fn fieldInfo(comptime T: type, comptime field: FieldEnum(T)) switch (@typeIn
 
 /// copy of std.meta.fieldIndex
 pub fn fieldIndex(comptime T: type, comptime name: []const u8) ?comptime_int {
-    inline for (fields(T)) |field, i| {
+    inline for (fields(T), 0..) |field, i| {
         if (mem.eql(u8, field.name(), name))
             return i;
     }
