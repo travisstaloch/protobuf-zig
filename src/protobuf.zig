@@ -942,22 +942,29 @@ fn serializeErr(comptime fmt: []const u8, args: anytype, err: Error) Error {
     return err;
 }
 
-fn encodeOptionalField(
+fn serializeOptionalField(
     message: *const Message,
     field: FieldDescriptor,
     member: [*]const u8,
     writer: anytype,
 ) Error!void {
     if (!message.hasFieldId(field.id)) return;
+    if (field.type == .TYPE_STRING and
+        ptrAlignCast(*const String, member).items == field.default_value)
+        return
+    else if (field.type == .TYPE_MESSAGE and
+        ptrAlignCast(*const *Message, member).* == field.default_value)
+        return;
+
     std.log.debug(
         "encodeOptionalField() '{s}' .{s} .{s}",
         .{ field.name, field.type.tagName(), field.label.tagName() },
     );
 
-    return encodeRequiredField(message, field, member, writer);
+    return serializeRequiredField(message, field, member, writer);
 }
 
-fn encodeRepeatedPacked(
+fn serializeRepeatedPacked(
     list: *const List(u8),
     field: FieldDescriptor,
     writer: anytype,
@@ -1001,7 +1008,7 @@ fn encodeRepeatedPacked(
     }
 }
 
-fn encodeRepeatedField(
+fn serializeRepeatedField(
     message: *const Message,
     field: FieldDescriptor,
     member: [*]const u8,
@@ -1015,21 +1022,21 @@ fn encodeRepeatedField(
     );
     if (flagsContain(field.flags, FieldFlag.FLAG_PACKED)) {
         var cwriter = std.io.countingWriter(std.io.null_writer);
-        try encodeRepeatedPacked(list, field, cwriter.writer());
+        try serializeRepeatedPacked(list, field, cwriter.writer());
         const tag = Tag.init(.LEN, field.id);
         try writeVarint128(usize, tag.encode(), writer, .int);
         try writeVarint128(usize, cwriter.bytes_written, writer, .int);
-        try encodeRepeatedPacked(list, field, writer);
+        try serializeRepeatedPacked(list, field, writer);
     } else {
         const size = repeatedEleSize(field.type);
         var i: usize = 0;
         while (i < list.len) : (i += 1) {
-            try encodeRequiredField(message, field, list.items + i * size, writer);
+            try serializeRequiredField(message, field, list.items + i * size, writer);
         }
     }
 }
 
-fn encodeOneofField(
+fn serializeOneofField(
     message: *const Message,
     field: FieldDescriptor,
     member: [*]const u8,
@@ -1047,10 +1054,10 @@ fn encodeOneofField(
         // if (ptr == NULL || ptr == field.default_value)
         //     return 0;
     }
-    return encodeRequiredField(message, field, member, writer);
+    return serializeRequiredField(message, field, member, writer);
 }
 
-fn encodeUnlabeledField(
+fn serializeUnlabeledField(
     message: *const Message,
     field: FieldDescriptor,
     member: [*]const u8,
@@ -1065,16 +1072,17 @@ fn encodeUnlabeledField(
     );
 }
 
-fn encodeRequiredField(
-    _: *const Message,
+fn serializeRequiredField(
+    message: *const Message,
     field: FieldDescriptor,
     member: [*]const u8,
     writer: anytype,
 ) Error!void {
     std.log.debug(
-        "encodeRequiredField() '{s}' .{s} .{s}",
+        "serializeRequiredField() '{s}' .{s} .{s}",
         .{ field.name, field.type.tagName(), field.label.tagName() },
     );
+
     switch (field.type) {
         .TYPE_ENUM, .TYPE_INT32, .TYPE_UINT32 => {
             const tag = Tag.init(.VARINT, field.id);
@@ -1127,9 +1135,13 @@ fn encodeRequiredField(
             try serialize(subm.*, writer);
         },
         .TYPE_STRING, .TYPE_BYTES => {
+            const desc = @ptrCast(*const MessageDescriptor, message.descriptor);
+            const ismap = flagsContain(desc.flags, MessageDescriptor.Flag.FLAG_MAP_TYPE);
+            std.log.info(".TYPE_STRING/.TYPE_BYTES ismap {}", .{ismap});
+            const s = ptrAlignCast(*const String, member);
+            if (ismap and s.len == 0) return;
             const tag = Tag.init(.LEN, field.id);
             try writeVarint128(usize, tag.encode(), writer, .int);
-            const s = ptrAlignCast(*const String, member);
             try writeVarint128(usize, s.len, writer, .int);
             std.log.debug("string {*}/{}:{x}", .{ s.items, s.len, s.len });
             _ = try writer.write(s.slice());
@@ -1142,11 +1154,11 @@ fn encodeRequiredField(
             const endtag = Tag.init(.EGROUP, field.id);
             try writeVarint128(usize, endtag.encode(), writer, .int);
         },
-        else => todo("encodeRequiredField() field.type .{s}", .{field.type.tagName()}),
+        else => todo("serializeRequiredField() field.type .{s}", .{field.type.tagName()}),
     }
 }
 
-fn encodeUnknownField(
+fn serializeUnknownField(
     message: *const Message,
     ufield: *const types.MessageUnknownField,
     writer: anytype,
@@ -1174,19 +1186,19 @@ pub fn serialize(message: *const Message, writer: anytype) Error!void {
         const member = buf.ptr + field.offset;
 
         if (field.label == .LABEL_REQUIRED)
-            try encodeRequiredField(message, field, member, writer)
+            try serializeRequiredField(message, field, member, writer)
         else if ((field.label == .LABEL_OPTIONAL or field.label == .LABEL_NONE) and
             flagsContain(field.flags, FieldFlag.FLAG_ONEOF))
-            try encodeOneofField(message, field, member, writer)
+            try serializeOneofField(message, field, member, writer)
         else if (field.label == .LABEL_OPTIONAL)
-            try encodeOptionalField(message, field, member, writer)
+            try serializeOptionalField(message, field, member, writer)
         else if (field.label == .LABEL_NONE)
-            try encodeUnlabeledField(message, field, member, writer)
+            try serializeUnlabeledField(message, field, member, writer)
         else
-            try encodeRepeatedField(message, field, member, writer);
+            try serializeRepeatedField(message, field, member, writer);
     }
     for (message.unknown_fields.slice()) |ufield|
-        try encodeUnknownField(message, ufield, writer);
+        try serializeUnknownField(message, ufield, writer);
 }
 
 fn debugit(m: *Message, comptime T: type) void {
