@@ -30,31 +30,31 @@ fn typenamesMatch(absolute_typename: []const u8, package: []const u8, typename: 
 }
 
 // search recursively for a message or enum with matching typename
-fn searchMessage(message: *const DescriptorProto, package: []const u8, typename: []const u8) bool {
+fn searchMessage(message: *const DescriptorProto, package: []const u8, typename: []const u8) ?Node {
     for (message.enum_type.slice()) |it|
         if (typenamesMatch(typename, package, it.name.slice()))
-            return true;
+            return .{ .enum_ = it };
     for (message.nested_type.slice()) |it| {
-        if (typenamesMatch(typename, package, it.name.slice()) or
-            searchMessage(it, package, typename))
-            return true;
+        if (typenamesMatch(typename, package, it.name.slice()))
+            return .{ .message = it };
+        if (searchMessage(it, package, typename)) |n| return n;
     }
-    return false;
+    return null;
 }
 
 // search recursively for a message or enum with matching typename
-fn searchFile(pf: *const FileDescriptorProto, typename: []const u8) bool {
+fn searchFile(pf: *const FileDescriptorProto, typename: []const u8) ?Node {
     const package = pf.package.slice();
     for (pf.enum_type.slice()) |it| {
         if (typenamesMatch(typename, package, it.name.slice()))
-            return true;
+            return .{ .enum_ = it };
     }
     for (pf.message_type.slice()) |it| {
-        if (typenamesMatch(typename, package, it.name.slice()) or
-            searchMessage(it, package, typename))
-            return true;
+        if (typenamesMatch(typename, package, it.name.slice()))
+            return .{ .message = it };
+        if (searchMessage(it, package, typename)) |n| return n;
     }
-    return false;
+    return null;
 }
 
 /// if field.type_name is present, asserts its not empty and starts with '.'
@@ -78,7 +78,7 @@ fn writeZigFieldTypeName(
     // a leading import symbol later on
     const parent_proto = for (ctx.req.proto_file.slice()) |pf| {
         if (pf == proto_file) continue;
-        if (searchFile(pf, field_typename)) break pf;
+        if (searchFile(pf, field_typename) != null) break pf;
     } else proto_file;
 
     const is_imported_typename = parent_proto != proto_file;
@@ -254,10 +254,37 @@ pub fn genMessage(
             try zig_writer.print("{s}: ", .{field_name});
         try writeZigFieldType(field, proto_file, ctx);
         _ = try zig_writer.write(" = ");
-        if (field.label == .LABEL_REPEATED) {
+        if (field.has(.default_value))
+            switch (field.type) {
+                .TYPE_ENUM => //
+                _ = try zig_writer.print(".{s}", .{field.default_value.slice()}),
+                .TYPE_STRING,
+                .TYPE_BYTES,
+                .TYPE_MESSAGE,
+                => {
+                    try writeTypeName(.{ .message = message }, ctx, zig_writer);
+                    try zig_writer.print(".{s}_default", .{field.name});
+                },
+                else => _ = try zig_writer.write(field.default_value.slice()),
+            }
+        else if (field.label == .LABEL_REPEATED) {
             _ = try zig_writer.write(".{}");
         } else switch (field.type) {
-            .TYPE_ENUM, .TYPE_MESSAGE, .TYPE_GROUP => _ = try zig_writer.write("undefined"),
+            // TODO change enum default
+            .TYPE_ENUM => {
+                // proto2: For enums, the default value is the first value listed in the enum’s type definition.
+                if (mem.eql(u8, "proto2", proto_file.syntax.slice()))
+                    return genErr(
+                        "TODO support proto2 enum default values",
+                        .{},
+                        error.NotImplemented,
+                    );
+                // proto3: the default value is the first defined enum value, which must be 0.
+                _ = try zig_writer.write("@intToEnum(");
+                try writeZigFieldType(field, proto_file, ctx);
+                _ = try zig_writer.write(", 0)");
+            },
+            .TYPE_MESSAGE, .TYPE_GROUP => _ = try zig_writer.write("undefined"),
             else => _ = try zig_writer.write(scalarFieldZigDefault(field)),
         }
         _ = try zig_writer.write(",\n");
@@ -287,7 +314,10 @@ pub fn genMessage(
                 .TYPE_ENUM => //
                 try zig_writer.print(" = .{s};\n", .{field.default_value}),
                 .TYPE_STRING, .TYPE_BYTES => //
-                try zig_writer.print(" = String.init(\"{s}\");\n", .{field.default_value}),
+                try zig_writer.print(
+                    " = String.init(\"{s}\");\n",
+                    .{std.fmt.fmtSliceEscapeLower(field.default_value.slice())},
+                ),
                 else => //
                 try zig_writer.print(" = {s};\n", .{field.default_value}),
             }

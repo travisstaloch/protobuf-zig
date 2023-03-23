@@ -227,6 +227,7 @@ pub const FieldInfo = struct {
     }
 };
 
+/// either writes "NaN" or calls json.stringify(float)
 fn serializeFloat(float: anytype, writer: anytype) !void {
     if (std.math.isNan(float) or std.math.isSignalNan(float))
         _ = try writer.write("\"NaN\"")
@@ -395,7 +396,7 @@ fn serializeField(
                     if (i == 0) break;
                 }
             }
-        } else {
+        } else { // .TYPE_MESSAGE or .TYPE_GROUP non-repeated
             const subm = ptrAlignCast(*const *Message, member);
             try serializeImpl(subm.*, writer, child_info.options, arena);
         },
