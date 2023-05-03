@@ -37,6 +37,7 @@ pub const LocalError = error{
     InvalidData,
     InvalidMessageType,
     InternalError,
+    UnsupportedListElementSize,
 };
 
 pub const Error = std.mem.Allocator.Error ||
@@ -898,7 +899,32 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                     .{ field.name, size * list.len, size, list.len },
                 );
                 // TODO CLEAR_REMAINING_N_PTRS?
-                var bytes = try ctx.allocator.alloc(u8, size * list.len);
+                var bytes = switch (field.type) {
+                    .TYPE_DOUBLE,
+                    .TYPE_INT64,
+                    .TYPE_UINT64,
+                    .TYPE_FIXED64,
+                    .TYPE_SFIXED64,
+                    .TYPE_SINT64,
+                    .TYPE_BYTES,
+                    .TYPE_STRING,
+                    .TYPE_MESSAGE,
+                    .TYPE_GROUP,
+                    => try ctx.allocator.alignedAlloc(u8, 8, size * list.len),
+                    .TYPE_FLOAT,
+                    .TYPE_INT32,
+                    .TYPE_FIXED32,
+                    .TYPE_UINT32,
+                    .TYPE_ENUM,
+                    .TYPE_SFIXED32,
+                    .TYPE_SINT32,
+                    .TYPE_BOOL,
+                    => try ctx.allocator.alignedAlloc(u8, 4, size * list.len),
+                    else => {
+                        std.log.err("type={s} size={}", .{ @tagName(field.type), size });
+                        return error.UnsupportedListElementSize;
+                    },
+                };
                 list.items = bytes.ptr;
                 list.cap = list.len;
                 list.len = 0;

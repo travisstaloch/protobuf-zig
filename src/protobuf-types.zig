@@ -751,8 +751,7 @@ pub const Message = extern struct {
                             "deinit {s}.{s} repeated string field len {}",
                             .{ desc.name, field.name, list.len },
                         );
-                        for (list.slice()) |s|
-                            s.deinit(allocator);
+                        for (list.slice()) |s| s.deinit(allocator);
                         list.deinit(allocator);
                     }
                 } else if (field.type == .TYPE_MESSAGE or field.type == .TYPE_GROUP) {
@@ -783,7 +782,34 @@ pub const Message = extern struct {
                                 size * list.len,
                             },
                         );
-                        allocator.free(list.items[0 .. size * list.cap]);
+                        switch (field.type) {
+                            .TYPE_DOUBLE,
+                            .TYPE_INT64,
+                            .TYPE_UINT64,
+                            .TYPE_FIXED64,
+                            .TYPE_SFIXED64,
+                            .TYPE_SINT64,
+                            => {
+                                const ptr = @alignCast(8, list.items);
+                                allocator.free(ptr[0 .. size * list.cap]);
+                            },
+                            .TYPE_FLOAT,
+                            .TYPE_INT32,
+                            .TYPE_FIXED32,
+                            .TYPE_UINT32,
+                            .TYPE_ENUM,
+                            .TYPE_SFIXED32,
+                            .TYPE_SINT32,
+                            .TYPE_BOOL,
+                            => {
+                                const ptr = @alignCast(4, list.items);
+                                allocator.free(ptr[0 .. size * list.cap]);
+                            },
+                            else => {
+                                std.log.err("TODO: support type={s} size={}", .{ @tagName(field.type), size });
+                                unreachable;
+                            },
+                        }
                     }
                 }
             } else if (field.type == .TYPE_MESSAGE or field.type == .TYPE_GROUP) {
