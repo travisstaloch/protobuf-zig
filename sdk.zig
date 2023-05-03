@@ -30,12 +30,12 @@ pub const GenStep = struct {
             &.{ cache_path, "lib.zig" },
         );
         self.* = GenStep{
-            .step = std.build.Step.init(
-                .custom,
-                "build-template",
-                b.allocator,
-                make,
-            ),
+            .step = std.build.Step.init(.{
+                .id = .custom,
+                .name = "build-template",
+                .owner = b,
+                .makeFn = &make,
+            }),
             .b = b,
             .cache_path = cache_path,
             .lib_file = .{
@@ -53,7 +53,7 @@ pub const GenStep = struct {
             source.addStepDependencies(&self.step);
         }
 
-        const run_cmd = exe.run();
+        const run_cmd = b.addRunArtifact(exe);
         run_cmd.step.dependOn(&exe.step);
 
         try b.cache_root.handle.makePath(protobuf_zig_path);
@@ -70,7 +70,8 @@ pub const GenStep = struct {
 
     /// creates a 'lib.zig' file at self.lib_file.path which exports all
     /// generated .pb.zig files
-    fn make(step: *std.build.Step) !void {
+    fn make(step: *std.build.Step, prog_node: *std.Progress.Node) anyerror!void {
+        _ = prog_node;
         const self = @fieldParentPtr(GenStep, "step", step);
 
         var file = try std.fs.cwd().createFile(self.lib_file.path.?, .{});

@@ -71,7 +71,7 @@ pub fn main() !void {
     var argv = std.ArrayList([]const u8).init(alloc);
     try argv.appendSlice(&.{
         "protoc",
-        "--plugin=zig-out/bin/protoc-gen-zig",
+        "--plugin=zig-out/bin/protoc-gen-zig" ++ (if (@import("builtin").target.os.tag == .windows) ".exe" else ""),
         "--zig_out",
         zig_out,
     });

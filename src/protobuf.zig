@@ -216,17 +216,17 @@ fn genericMessageInit(desc: *const MessageDescriptor) Message {
                 .TYPE_FLOAT,
                 .TYPE_ENUM,
                 .TYPE_BOOL,
-                => @memcpy(field_bytes, default, 4),
+                => @memcpy(field_bytes[0..4], default[0..4]),
                 .TYPE_INT64,
                 .TYPE_SINT64,
                 .TYPE_SFIXED64,
                 .TYPE_UINT64,
                 .TYPE_FIXED64,
                 .TYPE_DOUBLE,
-                => @memcpy(field_bytes, default, 8),
+                => @memcpy(field_bytes[0..8], default[0..8]),
                 .TYPE_STRING,
                 .TYPE_BYTES,
-                => @memcpy(field_bytes, default, @sizeOf(String)),
+                => @memcpy(field_bytes[0..@sizeOf(String)], default[0..@sizeOf(String)]),
                 .TYPE_MESSAGE => { //
                     if (true) @panic("TODO - TYPE_STRING/MESSAGE default_value");
                     mem.writeIntLittle(usize, field_bytes[0..8], @ptrToInt(field.default_value));
@@ -417,7 +417,7 @@ fn parseOneofMember(
                 },
                 else => {},
             }
-            @memset(member, 0, ele_size);
+            @memset(member[0..ele_size], 0);
             message.setPresentValue(oneof_id, false);
         }
     }

@@ -44,7 +44,7 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    protocgen_echo.install();
+    b.installArtifact(protocgen_echo);
     protocgen_echo.addOptions("build_options", build_options);
 
     const protoc_zig = b.addExecutable(.{
@@ -53,11 +53,11 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    protoc_zig.install();
+    b.installArtifact(protoc_zig);
     protoc_zig.addOptions("build_options", build_options);
     protoc_zig.addModule("protobuf", protobuf_mod);
 
-    const run_cmd = protoc_zig.run();
+    const run_cmd = b.addRunArtifact(protoc_zig);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         run_cmd.addArgs(args);
@@ -94,7 +94,7 @@ pub fn build(b: *std.build.Builder) !void {
     });
     main_tests.step.dependOn(b.getInstallStep());
     main_tests.step.dependOn(&gen_step.step);
-    main_tests.setFilter(test_filter);
+    main_tests.filter = test_filter;
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);
@@ -105,7 +105,6 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    conformance_exe.install();
     conformance_exe.addOptions("build_options", build_options);
     conformance_exe.addModule("protobuf", protobuf_mod);
     conformance_exe.addAnonymousModule("generated", .{
@@ -113,5 +112,5 @@ pub fn build(b: *std.build.Builder) !void {
         .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
     });
     conformance_exe.step.dependOn(&gen_step.step);
-    conformance_exe.install();
+    b.installArtifact(conformance_exe);
 }
