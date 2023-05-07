@@ -335,10 +335,14 @@ pub fn gen(ctx: *Context) !CodeGeneratorResponse {
             .{file_to_gen},
             error.MissingDependency,
         );
+        ctx.output.items.len = 0;
         try genFile(proto_file, ctx);
         var file = try ctx.alloc.create(CodeGeneratorResponse.File);
         file.* = CodeGeneratorResponse.File.init();
-        file.set(.content, String.init(try ctx.output.toOwnedSliceSentinel(ctx.alloc, 0)));
+        try ctx.output.append(ctx.alloc, 0);
+        const tree = try std.zig.Ast.parse(ctx.alloc, ctx.output.items[0 .. ctx.output.items.len - 1 :0], .zig);
+        const formatted_source = try tree.render(ctx.alloc);
+        file.set(.content, String.init(formatted_source));
         if (!mem.endsWith(u8, file_to_gen.slice(), ".proto")) return error.NonProtoFile;
         const pb_zig_filename = try mem.concat(ctx.alloc, u8, &.{
             file_to_gen.items[0 .. file_to_gen.len - ".proto".len],
