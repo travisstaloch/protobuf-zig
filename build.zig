@@ -39,8 +39,8 @@ pub fn build(b: *std.build.Builder) !void {
 
     // for capturing output of system installed protoc. just echoes out whatever protoc sends
     const protocgen_echo = b.addExecutable(.{
-        .name = "protoc-gen-zig",
-        .root_source_file = .{ .path = "src/protoc-gen-zig.zig" },
+        .name = "protoc-echo-to-stderr",
+        .root_source_file = .{ .path = "src/protoc-echo-to-stderr.zig" },
         .target = target,
         .optimize = optimize,
     });
@@ -48,7 +48,7 @@ pub fn build(b: *std.build.Builder) !void {
     protocgen_echo.addOptions("build_options", build_options);
 
     const protoc_zig = b.addExecutable(.{
-        .name = "protoc-zig",
+        .name = "protoc-gen-zig",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
@@ -57,13 +57,16 @@ pub fn build(b: *std.build.Builder) !void {
     protoc_zig.addOptions("build_options", build_options);
     protoc_zig.addModule("protobuf", protobuf_mod);
 
-    const run_cmd = b.addRunArtifact(protoc_zig);
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
+    const run_protoc_cmd = b.addSystemCommand(&.{
+        "protoc",
+        sdk.plugin_arg,
+        "--zig_out=gen",
+    });
+    run_protoc_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| run_protoc_cmd.addArgs(args);
+
+    const run_step = b.step("run", "Run system protoc using protoc-gen-zig as a plugin.  Writes output to gen/ directory by default.");
+    run_step.dependOn(&run_protoc_cmd.step);
 
     // generate files that need to be avaliable in tests
     var gen_step = try sdk.GenStep.create(b, protoc_zig, &.{

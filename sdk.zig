@@ -1,5 +1,8 @@
 const std = @import("std");
 
+pub const plugin_arg = "--plugin=zig-out/bin/protoc-gen-zig" ++
+    (if (@import("builtin").target.os.tag == .windows) ".exe" else "");
+
 pub const GenStep = struct {
     step: std.build.Step,
     b: *std.build.Builder,
@@ -53,17 +56,19 @@ pub const GenStep = struct {
             source.addStepDependencies(&self.step);
         }
 
-        const run_cmd = b.addRunArtifact(exe);
+        const run_cmd = b.addSystemCommand(&.{
+            "protoc",
+            plugin_arg,
+            "--zig_out",
+            cache_path,
+            "-I",
+            "examples",
+        });
         run_cmd.step.dependOn(&exe.step);
+        for (files) |file| run_cmd.addArg(file);
+        self.step.dependOn(&run_cmd.step);
 
         try b.cache_root.handle.makePath(protobuf_zig_path);
-
-        run_cmd.addArgs(&.{ "--zig_out", cache_path, "-I", "examples" });
-
-        for (files) |file|
-            run_cmd.addArg(file);
-
-        self.step.dependOn(&run_cmd.step);
 
         return self;
     }
