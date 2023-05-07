@@ -161,7 +161,7 @@ fn writeZigFieldType(
     ctx: *Context,
 ) !void {
     const is_list = field.label == .LABEL_REPEATED;
-    const zig_writer = ctx.zig_file.writer();
+    const zig_writer = ctx.output.writer(ctx.alloc);
     if (is_list) _ = try zig_writer.write("ArrayListMut(");
     switch (field.type) {
         .TYPE_MESSAGE, .TYPE_GROUP => try writeZigFieldTypeName("*", field, "", proto_file, zig_writer, ctx),
@@ -177,7 +177,7 @@ pub fn genMessageTest(
     ctx: *Context,
 ) !void {
     // TODO roundtrip ser/de tests
-    const zig_writer = ctx.zig_file.writer();
+    const zig_writer = ctx.output.writer(ctx.alloc);
 
     _ = try zig_writer.write(
         \\
@@ -236,7 +236,7 @@ pub fn genMessage(
     proto_file: *const FileDescriptorProto,
     ctx: *Context,
 ) !void {
-    const zig_writer = ctx.zig_file.writer();
+    const zig_writer = ctx.output.writer(ctx.alloc);
     try zig_writer.print(
         \\
         \\pub const {s} = extern struct {{
@@ -408,7 +408,7 @@ pub fn genFieldDescriptors(
     ctx: *Context,
     gen_oneof_fields: bool,
 ) !void {
-    const zig_writer = ctx.zig_file.writer();
+    const zig_writer = ctx.output.writer(ctx.alloc);
 
     for (message.field.slice()) |field| {
         const is_oneof = field.has(.oneof_index);
@@ -480,7 +480,7 @@ pub fn genEnum(
     _: *const FileDescriptorProto,
     ctx: *Context,
 ) !void {
-    const writer = ctx.zig_file.writer();
+    const writer = ctx.output.writer(ctx.alloc);
     try writer.print(
         "pub const {s} = enum(i32) {{\n",
         .{enumproto.name},
@@ -519,7 +519,7 @@ pub fn genEnumTest(
     ctx: *Context,
 ) !void {
     // TODO roundtrip ser/de tests
-    const zig_writer = ctx.zig_file.writer();
+    const zig_writer = ctx.output.writer(ctx.alloc);
     _ = try zig_writer.write(
         \\
         \\test { // dummy test for typechecking
@@ -538,7 +538,7 @@ pub fn genPrelude(
     ctx: *Context,
 ) !void {
     // zig imports
-    const zig_writer = ctx.zig_file.writer();
+    const zig_writer = ctx.output.writer(ctx.alloc);
     _ = try zig_writer.write(
         \\const std = @import("std");
         \\const pb = @import("protobuf");

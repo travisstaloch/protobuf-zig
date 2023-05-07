@@ -8,6 +8,7 @@ const todo = common.todo;
 const plugin = pb.plugin;
 const descr = pb.descriptor;
 const CodeGeneratorRequest = plugin.CodeGeneratorRequest;
+const CodeGeneratorResponse = plugin.CodeGeneratorResponse;
 const DescriptorProto = descr.DescriptorProto;
 const EnumDescriptorProto = descr.EnumDescriptorProto;
 const FileDescriptorProto = descr.FileDescriptorProto;
@@ -40,17 +41,12 @@ pub fn genErr(comptime fmt: []const u8, args: anytype, err: anyerror) anyerror {
 }
 
 pub fn context(
-    gen_path: []const u8,
     alloc: mem.Allocator,
     req: *const CodeGeneratorRequest,
 ) Context {
     return .{
-        .gen_path = gen_path,
         .alloc = alloc,
         .req = req,
-        .zig_file = undefined,
-        .ch_file = undefined,
-        .cc_file = undefined,
     };
 }
 
@@ -71,7 +67,6 @@ pub const Node = union(enum) {
 };
 
 pub const Context = struct {
-    gen_path: []const u8,
     alloc: mem.Allocator,
     req: *const CodeGeneratorRequest,
     buf: [256]u8 = undefined,
@@ -80,25 +75,15 @@ pub const Context = struct {
     /// map from child (enum/message pointer) to parent message.
     /// only includes nested types which have a parent - top level are excluded.
     parents: std.AutoHashMapUnmanaged(*const anyopaque, *const DescriptorProto) = .{},
-    zig_file: std.fs.File,
-    /// c .h file
-    ch_file: std.fs.File,
-    /// c .c file
-    cc_file: std.fs.File,
+    output: std.ArrayListUnmanaged(u8) = .{},
     enum_buf: std.ArrayListUnmanaged(i32) = .{},
 
-    pub fn gen(ctx: *Context) !void {
+    pub fn gen(ctx: *Context) !CodeGeneratorResponse {
         defer ctx.deinit();
         return top_level.gen(ctx);
     }
 
     pub fn deinit(ctx: *Context) void {
-        if (output_format == .zig)
-            ctx.zig_file.close()
-        else {
-            ctx.ch_file.close();
-            ctx.cc_file.close();
-        }
         ctx.depmap.deinit(ctx.alloc);
         ctx.parents.deinit(ctx.alloc);
         ctx.enum_buf.deinit(ctx.alloc);
@@ -234,12 +219,8 @@ pub fn printToAll(
     comptime fmt: []const u8,
     args: anytype,
 ) !void {
-    if (output_format == .zig) {
-        try ctx.zig_file.writer().print(fmt, args);
-    } else {
-        try ctx.ch_file.writer().print(fmt, args);
-        try ctx.cc_file.writer().print(fmt, args);
-    }
+    const writer = ctx.output.writer(ctx.alloc);
+    _ = try writer.print(fmt, args);
 }
 pub fn printBanner(
     ctx: *Context,
@@ -324,7 +305,7 @@ fn populateParents(
     }
 }
 
-pub fn gen(ctx: *Context) !void {
+pub fn genPopulateMaps(ctx: *Context) !void {
     // populate depmap
     for (ctx.req.proto_file.slice()) |proto_file|
         try ctx.depmap.putNoClobber(ctx.alloc, proto_file.name.slice(), proto_file);
@@ -335,21 +316,19 @@ pub fn gen(ctx: *Context) !void {
         for (proto_file.message_type.slice()) |message|
             try populateParents(ctx, .{ .message = message }, null);
     }
+}
 
-    var gendir = try std.fs.cwd().openDir("gen", .{});
-    defer gendir.close();
-    if (output_format == .c)
-        try std.fs.cwd().copyFile("src/protobuf-zig.h", gendir, "protobuf-zig.h", .{});
+pub fn gen(ctx: *Context) !CodeGeneratorResponse {
+    var res = CodeGeneratorResponse.init();
+    try genPopulateMaps(ctx);
+    res.set(.supported_features, @intCast(u64, @enumToInt(CodeGeneratorResponse.Feature.FEATURE_PROTO3_OPTIONAL)));
+
+    if (output_format == .c) {
+        std.log.err("TODO support output_format == .c", .{});
+        return error.Todo;
+    }
 
     for (ctx.req.file_to_generate.slice()) |file_to_gen| {
-        // std.debug.print("filename {s} proto_file {}\n", .{ filename, proto_file });
-        if (output_format == .zig)
-            ctx.zig_file = try createFile(ctx, file_to_gen, genzig.zig_extension)
-        else {
-            ctx.ch_file = try createFile(ctx, file_to_gen, genc.ch_extension);
-            ctx.cc_file = try createFile(ctx, file_to_gen, genc.cc_extension);
-        }
-
         const proto_file = ctx.depmap.get(file_to_gen.slice()) orelse
             return genErr(
             "file_to_gen '{s}' not found in req.proto_file",
@@ -357,5 +336,16 @@ pub fn gen(ctx: *Context) !void {
             error.MissingDependency,
         );
         try genFile(proto_file, ctx);
+        var file = try ctx.alloc.create(CodeGeneratorResponse.File);
+        file.* = CodeGeneratorResponse.File.init();
+        file.set(.content, String.init(try ctx.output.toOwnedSliceSentinel(ctx.alloc, 0)));
+        if (!mem.endsWith(u8, file_to_gen.slice(), ".proto")) return error.NonProtoFile;
+        const pb_zig_filename = try mem.concat(ctx.alloc, u8, &.{
+            file_to_gen.items[0 .. file_to_gen.len - ".proto".len],
+            ".pb.zig",
+        });
+        file.set(.name, String.init(pb_zig_filename));
+        try res.file.append(ctx.alloc, file);
     }
+    return res;
 }

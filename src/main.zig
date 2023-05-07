@@ -36,70 +36,21 @@ fn getArg(args: *[]const []const u8, comptime startswith: []const u8) !?[]const 
     return null;
 }
 
-/// a simple driver for testing message deserialization
-///
-/// supports protoc args '-I inc-dir' and '--decode typename'.
-/// example usage in script/zig-decode-text.sh
-/// $ script/protoc-enc-zig-dec.sh examples/only_enum.proto
+/// A simple protoc plugin implementation.  Similar to
+/// https://github.com/protocolbuffers/protobuf-go/blob/master/cmd/protoc-gen-go/main.go.
+/// Reads a CodeGeneratorRequest from stdin and writes a CodeGeneratorResponse to stdout.
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const alloc = arena.allocator();
 
-    var args = try std.process.argsAlloc(alloc);
-    const exepath = args[0];
-    _ = exepath;
-    args = args[1..];
-    var includes = std.ArrayList([]const u8).init(alloc);
-    var decode: []const u8 = "";
-    var zig_out: []const u8 = "";
-    var files = std.ArrayList([]const u8).init(alloc);
-    while (args.len > 0) : (args = args[1..]) {
-        if (try getArg(&args, "-I")) |inc|
-            try includes.append(inc)
-        else if (try getArg(&args, "--decode")) |s|
-            decode = s
-        else if (try getArg(&args, "--zig_out")) |s|
-            zig_out = s
-        else
-            try files.append(args[0]);
-    }
-    std.log.debug("decode    '{s}'", .{decode});
-    std.log.debug("zig_out   '{s}'", .{zig_out});
-    std.log.debug("includes  '{s}'", .{includes.items});
-    std.log.debug("files     '{s}'", .{files.items});
+    const input = try std.io.getStdIn().reader().readAllAlloc(alloc, std.math.maxInt(u32));
 
-    var argv = std.ArrayList([]const u8).init(alloc);
-    try argv.appendSlice(&.{
-        "protoc",
-        "--plugin=zig-out/bin/protoc-gen-zig" ++ (if (@import("builtin").target.os.tag == .windows) ".exe" else ""),
-        "--zig_out",
-        zig_out,
-    });
-    for (includes.items) |inc|
-        try argv.appendSlice(&.{ "-I", inc });
-    for (files.items) |file|
-        try argv.append(file);
+    var parse_ctx = pb.protobuf.context(input, alloc);
+    const message = try parse_ctx.deserialize(&CodeGeneratorRequest.descriptor);
+    const req = try message.as(CodeGeneratorRequest);
 
-    const res = try std.ChildProcess.exec(.{
-        .allocator = alloc,
-        .argv = argv.items,
-        .max_output_bytes = std.math.maxInt(u32),
-    });
-
-    if (res.term != .Exited or res.term.Exited != 0) {
-        const cmd = try mem.join(alloc, " ", argv.items);
-        std.debug.print("{s}\n", .{cmd});
-        std.log.err("{s}\n", .{res.stderr});
-        return error.SystemProtocError;
-    }
-
-    var parse_ctx = pb.protobuf.context(res.stderr, alloc);
-    if (decode.len == 0) {
-        const message = try parse_ctx.deserialize(&CodeGeneratorRequest.descriptor);
-        const req = try message.as(CodeGeneratorRequest);
-        var gen_ctx = gen.context(zig_out, alloc, req);
-        try gen_ctx.gen();
-    } else {
-        std.log.err("TODO support decode='{s}'", .{decode});
-    }
+    var gen_ctx = gen.context(alloc, req);
+    const resp = try gen_ctx.gen();
+    const w = std.io.getStdOut().writer();
+    try pb.protobuf.serialize(&resp.base, w);
 }
