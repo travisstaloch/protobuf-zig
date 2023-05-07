@@ -8,15 +8,20 @@ const protobuf = pb.protobuf;
 const String = pb.extern_types.String;
 
 /// 1. genrate zig-out/bin/protoc-gen-zig by running $ zig build
-/// 2. run the following with a modified $PATH that includes zig-out/bin/
-///    $ protoc --plugin zig-out/bin/protoc-gen-zig --zig_out=gen `protofile`
+/// 2. run the following
+///    $ protoc --plugin protoc-gen-zig=zig-out/bin/protoc-echo-to-stderr --zig_out=gen `protofile`
 pub fn parseWithSystemProtoc(protofile: []const u8, alloc: mem.Allocator) ![]const u8 {
-    { // make sure the exe is built in echo mode
-        _ = try std.ChildProcess.exec(.{ .allocator = alloc, .argv = &.{ "zig", "build" } });
-    }
+    _ = try std.ChildProcess.exec(.{ .allocator = alloc, .argv = &.{ "zig", "build" } });
+
     const r = try std.ChildProcess.exec(.{
         .allocator = alloc,
-        .argv = &.{ "protoc", "--plugin", "zig-out/bin/protoc-gen-zig", "--zig_out=gen", protofile },
+        .argv = &.{
+            "protoc",
+            "--plugin",
+            "protoc-gen-zig=zig-out/bin/protoc-echo-to-stderr",
+            "--zig_out=gen",
+            protofile,
+        },
     });
     alloc.free(r.stdout);
     return r.stderr;
