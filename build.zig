@@ -27,7 +27,7 @@ pub fn build(b: *std.build.Builder) !void {
         "A filter for tests",
     ) orelse "";
 
-    const protobuf_mod = b.createModule(.{
+    const protobuf_mod = b.addModule("protobuf-zig", .{
         .source_file = .{ .path = "src/lib.zig" },
     });
     try protobuf_mod.dependencies.put("protobuf", protobuf_mod);
