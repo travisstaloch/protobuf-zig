@@ -4,7 +4,7 @@ test {
     _ = @import("test-conformance.zig");
 }
 
-// zig test src/tests.zig --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end --pkg-end --main-pkg-path .
+// $ zig test src/tests.zig --mod protobuf:protobuf:src/lib.zig --mod generated:protobuf:zig-cache/protobuf-zig/lib.zig --deps protobuf,generated
 test "readme" {
     // Note - the package 'protobuf' below is src/lib.zig.  this package must
     // include itself. i hope to remove this requirement soon.  it can be

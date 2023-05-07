@@ -17,15 +17,15 @@ A tool for generating zig code capable of de/serializing to the protocol buffer 
 
 # Usage
 
-First, install the `protoc` compiler on your system.  
+* download the [`protoc` compiler](https://protobuf.dev/downloads/)
+* make sure `protoc` is in your PATH
 
-* on linux systems with apt:
+Note: this project has been tested against
 ```console
-sudo apt install protobuf-compiler
+$ protoc --version
+libprotoc 21.5
 ```
-* otherwise: [protoc](https://developers.google.com/protocol-buffers/docs/downloads)
 
-Once you have `protoc` in your PATH
 
 ### Build
 ```console
@@ -40,14 +40,23 @@ zig build test
 
 ### Generate .zig files from .proto files
 ```console
-zig build
-zig-out/bin/protoc-zig --zig_out=gen/ -I examples/ examples/only_message.proto examples/only_enum.proto
+$ zig build run -- -I examples/ examples/person.proto examples/only_enum.proto
+# writes generated content to ./gen/ by default.  
+# use --zig_out=/gen-path to specify different directory.
 ```
 
-This generates the following files in gen/:
+Note: all arguments after -- are forwarded to `protoc`. 
+
+This is equivalent to:
+```console
+$ zig build
+$ protoc --plugin=zig-out/bin/protoc-gen-zig --zig_out=gen -I examples/ examples/person.proto examples/only_enum.proto
 ```
-only_message.pb.zig
-only_enum.pb.zig
+
+Either of the above generate the following files in gen/:
+```console
+$ ls gen
+only_enum.pb.zig  person.pb.zig
 ```
 
 ### Use the generated code
@@ -56,8 +65,8 @@ only_enum.pb.zig
 ```zig
 test "readme" {
     // Note - the package 'protobuf' below is src/lib.zig.  this package must
-    // include itself. i hope to remove this requirement soon.  it can be
-    // provided in build.zig or on the command line:
+    // include itself.  it can be provided in build.zig or on the command line 
+    // as shown below.
     const std = @import("std");
     const pb = @import("protobuf");
     const Person = @import("generated").person.Person;
@@ -102,7 +111,7 @@ test "readme" {
 ```
 
 ```console
-$ zig test src/tests.zig --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end --pkg-end --main-pkg-path .
+$ zig test src/tests.zig --mod protobuf:protobuf:src/lib.zig --mod generated:protobuf:zig-cache/protobuf-zig/lib.zig --deps protobuf,generated
 ```
 
 # Resources

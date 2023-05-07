@@ -1,2 +1,2 @@
 set -x
-zig test "$@" --pkg-begin protobuf src/lib.zig --pkg-begin protobuf src/lib.zig --pkg-end -freference-trace
+zig test "$@" --mod protobuf:protobuf:src/lib.zig  --deps protobuf -freference-trace
