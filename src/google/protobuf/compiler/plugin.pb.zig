@@ -138,17 +138,109 @@ pub const CodeGeneratorRequest = extern struct {
     };
 };
 
-// pub const CodeGeneratorResponse__File = extern struct {
-//     base: Message,
-//     name: String = String.initEmpty(),
-//     insertion_point: String = String.initEmpty(),
-//     content: String = String.initEmpty(),
-//     generated_code_info: [*c]GeneratedCodeInfo,
-// };
+pub const CodeGeneratorResponse = extern struct {
+    base: Message,
+    @"error": String = String.empty,
+    supported_features: u64 = 0,
+    file: ListMut(*CodeGeneratorResponse.File) = .{},
 
-// pub const CodeGeneratorResponse = extern struct {
-//     base: Message,
-//     @"error": String = String.initEmpty(),
-//     supported_features: u64 = 0,
-//     file: [*c][*c]Compiler__CodeGeneratorResponse__File,
-// };
+    pub const field_ids = [_]c_uint{ 1, 2, 15 };
+    pub const opt_field_ids = [_]c_uint{ 1, 2 };
+    pub const is_map_entry = false;
+
+    pub usingnamespace MessageMixins(@This());
+    pub const field_descriptors = [_]FieldDescriptor{
+        FieldDescriptor.init(
+            "error",
+            1,
+            .LABEL_OPTIONAL,
+            .TYPE_STRING,
+            @offsetOf(CodeGeneratorResponse, "error"),
+            null,
+            null,
+            0,
+        ),
+        FieldDescriptor.init(
+            "supported_features",
+            2,
+            .LABEL_OPTIONAL,
+            .TYPE_UINT64,
+            @offsetOf(CodeGeneratorResponse, "supported_features"),
+            null,
+            null,
+            0,
+        ),
+        FieldDescriptor.init(
+            "file",
+            15,
+            .LABEL_REPEATED,
+            .TYPE_MESSAGE,
+            @offsetOf(CodeGeneratorResponse, "file"),
+            &CodeGeneratorResponse.File.descriptor,
+            null,
+            0,
+        ),
+    };
+
+    pub const File = extern struct {
+        base: Message,
+        name: String = String.empty,
+        insertion_point: String = String.empty,
+        content: String = String.empty,
+        generated_code_info: *pb.descriptor.GeneratedCodeInfo = undefined,
+
+        pub const field_ids = [_]c_uint{ 1, 2, 15, 16 };
+        pub const opt_field_ids = [_]c_uint{ 1, 2, 15, 16 };
+        pub const is_map_entry = false;
+
+        pub usingnamespace MessageMixins(@This());
+        pub const field_descriptors = [_]FieldDescriptor{
+            FieldDescriptor.init(
+                "name",
+                1,
+                .LABEL_OPTIONAL,
+                .TYPE_STRING,
+                @offsetOf(CodeGeneratorResponse.File, "name"),
+                null,
+                null,
+                0,
+            ),
+            FieldDescriptor.init(
+                "insertion_point",
+                2,
+                .LABEL_OPTIONAL,
+                .TYPE_STRING,
+                @offsetOf(CodeGeneratorResponse.File, "insertion_point"),
+                null,
+                null,
+                0,
+            ),
+            FieldDescriptor.init(
+                "content",
+                15,
+                .LABEL_OPTIONAL,
+                .TYPE_STRING,
+                @offsetOf(CodeGeneratorResponse.File, "content"),
+                null,
+                null,
+                0,
+            ),
+            FieldDescriptor.init(
+                "generated_code_info",
+                16,
+                .LABEL_OPTIONAL,
+                .TYPE_MESSAGE,
+                @offsetOf(CodeGeneratorResponse.File, "generated_code_info"),
+                &pb.descriptor.GeneratedCodeInfo.descriptor,
+                null,
+                0,
+            ),
+        };
+    };
+    pub const Feature = enum(i32) {
+        FEATURE_NONE = 0,
+        FEATURE_PROTO3_OPTIONAL = 1,
+
+        pub usingnamespace types.EnumMixins(@This());
+    };
+};
