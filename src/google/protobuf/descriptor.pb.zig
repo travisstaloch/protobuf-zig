@@ -1620,19 +1620,102 @@ pub const ServiceOptions = extern struct {
     };
 };
 
-// pub const GeneratedCodeInfo__Annotation = extern struct {
-//     base: Message,
-//     path: [*c]i32,
-//     source_file: String = String.initEmpty(),
-//     begin: i32 = 0,
-//     end: i32 = 0,
-//     semantic: GeneratedCodeInfo__Annotation__Semantic,
-// };
+pub const GeneratedCodeInfo = extern struct {
+    base: Message,
+    annotation: ListMut(*GeneratedCodeInfo.Annotation) = .{},
 
-// pub const GeneratedCodeInfo = extern struct {
-//     base: Message,
-//     annotation: [*c][*c]GeneratedCodeInfo__Annotation,
-// };
+    pub const field_ids = [_]c_uint{1};
+    pub const opt_field_ids = [_]c_uint{};
+    pub const is_map_entry = false;
+
+    pub usingnamespace MessageMixins(@This());
+    pub const field_descriptors = [_]FieldDescriptor{
+        FieldDescriptor.init(
+            "annotation",
+            1,
+            .LABEL_REPEATED,
+            .TYPE_MESSAGE,
+            @offsetOf(GeneratedCodeInfo, "annotation"),
+            &GeneratedCodeInfo.Annotation.descriptor,
+            null,
+            0,
+        ),
+    };
+
+    pub const Annotation = extern struct {
+        base: Message,
+        path: ListMutScalar(i32) = .{},
+        source_file: String = String.empty,
+        begin: i32 = 0,
+        end: i32 = 0,
+        semantic: GeneratedCodeInfo.Annotation.Semantic = @intToEnum(GeneratedCodeInfo.Annotation.Semantic, 0),
+
+        pub const field_ids = [_]c_uint{ 1, 2, 3, 4, 5 };
+        pub const opt_field_ids = [_]c_uint{ 2, 3, 4, 5 };
+        pub const is_map_entry = false;
+
+        pub usingnamespace MessageMixins(@This());
+        pub const field_descriptors = [_]FieldDescriptor{
+            FieldDescriptor.init(
+                "path",
+                1,
+                .LABEL_REPEATED,
+                .TYPE_INT32,
+                @offsetOf(GeneratedCodeInfo.Annotation, "path"),
+                null,
+                null,
+                @enumToInt(FieldDescriptor.FieldFlag.FLAG_PACKED),
+            ),
+            FieldDescriptor.init(
+                "source_file",
+                2,
+                .LABEL_OPTIONAL,
+                .TYPE_STRING,
+                @offsetOf(GeneratedCodeInfo.Annotation, "source_file"),
+                null,
+                null,
+                0,
+            ),
+            FieldDescriptor.init(
+                "begin",
+                3,
+                .LABEL_OPTIONAL,
+                .TYPE_INT32,
+                @offsetOf(GeneratedCodeInfo.Annotation, "begin"),
+                null,
+                null,
+                0,
+            ),
+            FieldDescriptor.init(
+                "end",
+                4,
+                .LABEL_OPTIONAL,
+                .TYPE_INT32,
+                @offsetOf(GeneratedCodeInfo.Annotation, "end"),
+                null,
+                null,
+                0,
+            ),
+            FieldDescriptor.init(
+                "semantic",
+                5,
+                .LABEL_OPTIONAL,
+                .TYPE_ENUM,
+                @offsetOf(GeneratedCodeInfo.Annotation, "semantic"),
+                &GeneratedCodeInfo.Annotation.Semantic.descriptor,
+                null,
+                0,
+            ),
+        };
+        pub const Semantic = enum(i32) {
+            NONE = 0,
+            SET = 1,
+            ALIAS = 2,
+
+            pub usingnamespace EnumMixins(@This());
+        };
+    };
+};
 
 pub const EnumValueOptions = extern struct {
     base: Message,

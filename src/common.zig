@@ -30,12 +30,6 @@ pub fn afterLastIndexOf(s: []const u8, delimeter: u8) []const u8 {
     const start = if (mem.lastIndexOfScalar(u8, s, delimeter)) |i| i + 1 else 0;
     return s[start..];
 }
-fn WithSentinel(comptime T: type) type {
-    return if (std.meta.sentinel(T)) |s|
-        [:s]const std.meta.Child(T)
-    else
-        T;
-}
 /// split on last instance of 'delimeter'
 pub fn splitOn(comptime T: type, s: T, delimeter: std.meta.Child(T)) [2]T {
     const start = if (mem.lastIndexOfScalar(std.meta.Child(T), s, delimeter)) |i| i else 0;
