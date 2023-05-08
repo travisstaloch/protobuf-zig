@@ -113,7 +113,7 @@ pub fn serialize(
     message: *const Message,
     writer: anytype,
     options: Options,
-) Error!void {
+) (@TypeOf(writer).Error || Error)!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     return serializeImpl(message, writer, options, &arena);
@@ -123,7 +123,7 @@ pub fn serializeImpl(
     writer: anytype,
     options: Options,
     arena: *std.heap.ArenaAllocator,
-) Error!void {
+) (@TypeOf(writer).Error || Error)!void {
     const desc = message.descriptor orelse return serializeErr(
         "invalid message. missing descriptor",
         .{},

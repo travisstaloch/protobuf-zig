@@ -973,7 +973,7 @@ fn serializeOptionalField(
     field: FieldDescriptor,
     member: [*]const u8,
     writer: anytype,
-) Error!void {
+) (@TypeOf(writer).Error || Error)!void {
     if (!message.hasFieldId(field.id)) return;
     if (field.type == .TYPE_STRING and
         ptrAlignCast(*const String, member).items == field.default_value)
@@ -1039,7 +1039,7 @@ fn serializeRepeatedField(
     field: FieldDescriptor,
     member: [*]const u8,
     writer: anytype,
-) Error!void {
+) (@TypeOf(writer).Error || Error)!void {
     const list = ptrAlignCast(*const List(u8), member);
     if (list.len == 0) return;
     std.log.debug(
@@ -1067,7 +1067,7 @@ fn serializeOneofField(
     field: FieldDescriptor,
     member: [*]const u8,
     writer: anytype,
-) Error!void {
+) (@TypeOf(writer).Error || Error)!void {
     if (!message.hasFieldId(field.id)) return;
     std.log.debug(
         "encodeOneofField() .{s} .{s}",
@@ -1088,10 +1088,9 @@ fn serializeUnlabeledField(
     field: FieldDescriptor,
     member: [*]const u8,
     writer: anytype,
-) Error!void {
+) (@TypeOf(writer).Error || Error)!void {
     _ = message;
     _ = member;
-    _ = writer;
     todo(
         "encodeUnlabeledField() .{s} .{s}",
         .{ field.type.tagName(), field.label.tagName() },
@@ -1103,7 +1102,7 @@ fn serializeRequiredField(
     field: FieldDescriptor,
     member: [*]const u8,
     writer: anytype,
-) Error!void {
+) (@TypeOf(writer).Error || Error)!void {
     std.log.debug(
         "serializeRequiredField() '{s}' .{s} .{s}",
         .{ field.name, field.type.tagName(), field.label.tagName() },
@@ -1188,7 +1187,7 @@ fn serializeUnknownField(
     message: *const Message,
     ufield: *const types.MessageUnknownField,
     writer: anytype,
-) Error!void {
+) (@TypeOf(writer).Error || Error)!void {
     _ = message;
     std.log.debug(
         "encodeUnknownField() tag wite_type=.{s} field_id={} data.len={}",
@@ -1199,7 +1198,7 @@ fn serializeUnknownField(
     _ = try writer.write(ufield.data.slice());
 }
 
-pub fn serialize(message: *const Message, writer: anytype) Error!void {
+pub fn serialize(message: *const Message, writer: anytype) (@TypeOf(writer).Error || Error)!void {
     const desc = message.descriptor orelse return serializeErr(
         "invalid message. missing descriptor",
         .{},
