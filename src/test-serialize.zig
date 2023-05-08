@@ -224,3 +224,14 @@ test "ser group round trip" {
 
     try testing.expectEqualStrings(buf.items, buf2.items);
 }
+
+test "http example" {
+    // this test is only verifies that serialize()'s error set supports
+    // more than just std.fs.File errors
+
+    const oneof_2 = @import("generated").oneof_2;
+    var data = oneof_2.TestAllTypesProto3.init();
+    var http_req: std.http.Client.Request = undefined;
+    var bufw = std.io.bufferedWriter(http_req.writer());
+    try pb.protobuf.serialize(&data.base, bufw.writer());
+}

@@ -1,6 +1,23 @@
 const std = @import("std");
 const mem = std.mem;
 
+pub const log = if (@import("builtin").is_test)
+    std.log.scoped(.@"protobuf-zig")
+else
+    struct {
+        pub const debug = dummy_log;
+        pub const info = dummy_log;
+        pub const warn = dummy_log;
+        pub const err = std.log.err;
+        fn dummy_log(
+            comptime format: []const u8,
+            args: anytype,
+        ) void {
+            _ = args;
+            _ = format;
+        }
+    };
+
 pub const GenFormat = enum { zig, c };
 pub const panicf = std.debug.panic;
 pub fn ptrAlign(comptime Ptr: type) comptime_int {

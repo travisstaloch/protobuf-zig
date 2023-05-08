@@ -13,6 +13,7 @@ const common = pb.common;
 const ptrAlignCast = common.ptrAlignCast;
 const flagsContain = types.flagsContain;
 const Error = pb.protobuf.Error;
+const log = common.log;
 
 fn b64Encode(s: String, writer: anytype) !void {
     var encbuf: [0x100]u8 = undefined;
@@ -27,7 +28,7 @@ fn b64Encode(s: String, writer: anytype) !void {
 }
 
 fn serializeErr(comptime fmt: []const u8, args: anytype, err: Error) Error {
-    std.log.err("json serialization error: " ++ fmt, args);
+    log.err("json serialization error: " ++ fmt, args);
     return err;
 }
 

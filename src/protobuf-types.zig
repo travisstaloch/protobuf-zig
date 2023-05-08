@@ -20,6 +20,7 @@ const Label = FieldDescriptorProto.Label;
 const Type = FieldDescriptorProto.Type;
 const FieldFlag = FieldDescriptor.FieldFlag;
 const common = pb.common;
+const log = common.log;
 const top_level = @This();
 
 pub const SERVICE_DESCRIPTOR_MAGIC = 0x14159bc3;
@@ -69,7 +70,7 @@ fn SetPresent(comptime T: type) fn (*T, comptime types.FieldEnum(T)) void {
                 compileErr("{s}.setPresent() field_enum == .base", .{name});
             const field_idx = types.fieldIndex(T, tagname) orelse
                 compileErr("{s}.setPresent() invalid field name {s}", .{ name, tagname });
-            std.log.debug("setPresent() {s}.{s}:{}", .{ name, @tagName(field_enum), field_idx });
+            log.debug("setPresent() {s}.{s}:{}", .{ name, @tagName(field_enum), field_idx });
             self.base.setPresentFieldIndex(field_idx - 1);
         }
     }.setPresent;
@@ -85,7 +86,7 @@ fn Has(comptime T: type) fn (T, comptime types.FieldEnum(T)) bool {
             const field_idx = types.fieldIndex(T, tagname) orelse
                 compileErr("{s}.Has() invalid field name {s}", .{ name, tagname });
             const field_id = T.field_ids[field_idx - 1];
-            std.log.debug(
+            log.debug(
                 "Has() {s}.{s}:{} field_id {} hasFieldId()={}",
                 .{ name, @tagName(field_enum), field_idx, field_id, self.base.hasFieldId(field_id) },
             );
@@ -134,7 +135,7 @@ pub fn setFieldHelp(
 ) void {
     self.setPresent(field_enum);
     const tagname = @tagName(field_enum);
-    std.log.debug("setFieldHelp() .{s}={}", .{ tagname, value });
+    log.debug("setFieldHelp() .{s}={}", .{ tagname, value });
     const field = types.fields(T)[@enumToInt(field_enum)];
     const F = field.ty();
     if (field == .union_field) {
@@ -152,7 +153,7 @@ pub fn getFieldHelp(
     comptime field_enum: types.FieldEnum(T),
 ) types.fieldInfo(T, field_enum).ty() {
     const tagname = @tagName(field_enum);
-    std.log.debug("getFieldHelp() .{s}", .{tagname});
+    log.debug("getFieldHelp() .{s}", .{tagname});
     if (comptime mem.indexOf(u8, tagname, "__")) |i| {
         const u = @field(self, tagname[0..i]);
         return @field(u, tagname[i + 2 ..]);
@@ -551,10 +552,10 @@ pub const Message = extern struct {
     pub fn setPresent(m: *Message, field_id: c_uint) void {
         const desc = m.descriptor orelse
             @panic("called setPresent() on a message with no descriptor.");
-        std.log.debug("setPresent({})", .{field_id});
+        log.debug("setPresent({})", .{field_id});
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse return;
         m.optional_fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx);
-        std.log.debug("setPresent 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
+        log.debug("setPresent 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
         // TODO if oneof field, remove other fields w/ same oneof_index
     }
 
@@ -563,13 +564,13 @@ pub const Message = extern struct {
     pub fn setPresentValue(m: *Message, field_id: c_uint, value: bool) void {
         const desc = m.descriptor orelse
             @panic("called setPresentValue() on a message with no descriptor.");
-        std.log.debug("setPresentValue({}, {})", .{ field_id, value });
+        log.debug("setPresentValue({}, {})", .{ field_id, value });
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse return;
         if (value)
             m.optional_fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx)
         else
             m.optional_fields_present &= ~(@as(u64, 1) << @intCast(u6, opt_field_idx));
-        std.log.debug("setPresentValue 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
+        log.debug("setPresentValue 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
         // TODO if oneof field, remove other fields w/ same oneof_index
     }
 
@@ -578,14 +579,14 @@ pub const Message = extern struct {
     pub fn setPresentFieldIndex(m: *Message, field_index: usize) void {
         const desc = m.descriptor orelse
             @panic("called setPresentFieldIndex() on a message with no descriptor.");
-        std.log.info("setPresentFieldIndex() field_index {}", .{field_index});
+        log.info("setPresentFieldIndex() field_index {}", .{field_index});
         m.setPresent(desc.field_ids.items[field_index]);
     }
 
     /// ptr cast to T. verifies that m.descriptor.name ends with @typeName(T)
     pub fn as(m: *Message, comptime T: type) !*T {
         if (!mem.endsWith(u8, @typeName(T), m.descriptor.?.name.slice())) {
-            std.log.err("expected '{s}' to contain '{s}'", .{ @typeName(T), m.descriptor.?.name });
+            log.err("expected '{s}' to contain '{s}'", .{ @typeName(T), m.descriptor.?.name });
             return error.TypeMismatch;
         }
         return @ptrCast(*T, m);
@@ -745,7 +746,7 @@ pub const Message = extern struct {
         const desc = m.descriptor orelse
             panicf("can't deinit a message with no descriptor.", .{});
 
-        std.log.debug(
+        log.debug(
             "\ndeinit message {s}{}-{} size={}",
             .{ desc.name, ptrfmt(m), ptrfmt(bytes + desc.sizeof_message), desc.sizeof_message },
         );
@@ -761,7 +762,7 @@ pub const Message = extern struct {
                     const L = ListMutScalar(String);
                     var list = ptrAlignCast(*L, bytes + field.offset);
                     if (list.len != 0) {
-                        std.log.debug(
+                        log.debug(
                             "deinit {s}.{s} repeated string field len {}",
                             .{ desc.name, field.name, list.len },
                         );
@@ -772,7 +773,7 @@ pub const Message = extern struct {
                     const L = ListMut(*Message);
                     var list = ptrAlignCast(*L, bytes + field.offset);
                     if (list.len != 0) {
-                        std.log.debug(
+                        log.debug(
                             "deinit {s}.{s} repeated message field len/cap {}/{}",
                             .{ desc.name, field.name, list.len, list.cap },
                         );
@@ -785,7 +786,7 @@ pub const Message = extern struct {
                     const L = ListMutScalar(u8);
                     var list = ptrAlignCast(*L, bytes + field.offset);
                     if (list.len != 0) {
-                        std.log.debug(
+                        log.debug(
                             "deinit {s}.{s} repeated field {s} len {} size {} bytelen {}",
                             .{
                                 desc.name,
@@ -820,7 +821,7 @@ pub const Message = extern struct {
                                 allocator.free(ptr[0 .. size * list.cap]);
                             },
                             else => {
-                                std.log.err("TODO: support type={s} size={}", .{ @tagName(field.type), size });
+                                log.err("TODO: support type={s} size={}", .{ @tagName(field.type), size });
                                 unreachable;
                             },
                         }
@@ -828,7 +829,7 @@ pub const Message = extern struct {
                 }
             } else if (field.type == .TYPE_MESSAGE or field.type == .TYPE_GROUP) {
                 if (m.hasFieldId(field.id)) {
-                    std.log.debug(
+                    log.debug(
                         "deinit {s}.{s} single message field",
                         .{ desc.name, field.name },
                     );
@@ -842,7 +843,7 @@ pub const Message = extern struct {
             } else if (field.type == .TYPE_STRING or field.type == .TYPE_BYTES) {
                 var s = ptrAlignCast(*String, bytes + field.offset);
                 if (s.len != 0 and s.items != String.empty.items) {
-                    std.log.debug(
+                    log.debug(
                         "deinit {s}.{s} single string field {} offset {}",
                         .{
                             desc.name,

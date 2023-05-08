@@ -81,8 +81,6 @@ test "examples/only_enum-1 - no deps" {
     try testing.expectEqual(@as(usize, 3), pfscloc.items[5].span.len);
     try testing.expectEqual(@as(usize, 5), pfscloc.items[6].path.len);
     try testing.expectEqual(@as(usize, 3), pfscloc.items[6].span.len);
-
-    std.log.info("req {}", .{req});
 }
 
 test "nested lists" {

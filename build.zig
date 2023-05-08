@@ -38,24 +38,24 @@ pub fn build(b: *std.build.Builder) !void {
     build_options.addOption(GenFormat, "output_format", gen_format);
 
     // for capturing output of system installed protoc. just echoes out whatever protoc sends
-    const protocgen_echo = b.addExecutable(.{
+    const protoc_echo = b.addExecutable(.{
         .name = "protoc-echo-to-stderr",
         .root_source_file = .{ .path = "src/protoc-echo-to-stderr.zig" },
         .target = target,
         .optimize = optimize,
     });
-    b.installArtifact(protocgen_echo);
-    protocgen_echo.addOptions("build_options", build_options);
+    b.installArtifact(protoc_echo);
+    protoc_echo.addOptions("build_options", build_options);
 
-    const protoc_zig = b.addExecutable(.{
+    const protoc_gen_zig = b.addExecutable(.{
         .name = "protoc-gen-zig",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
     });
-    b.installArtifact(protoc_zig);
-    protoc_zig.addOptions("build_options", build_options);
-    protoc_zig.addModule("protobuf", protobuf_mod);
+    b.installArtifact(protoc_gen_zig);
+    protoc_gen_zig.addOptions("build_options", build_options);
+    protoc_gen_zig.addModule("protobuf", protobuf_mod);
 
     const run_protoc_cmd = b.addSystemCommand(&.{
         "protoc",
@@ -69,7 +69,7 @@ pub fn build(b: *std.build.Builder) !void {
     run_step.dependOn(&run_protoc_cmd.step);
 
     // generate files that need to be avaliable in tests
-    var gen_step = try sdk.GenStep.create(b, protoc_zig, &.{
+    var gen_step = try sdk.GenStep.create(b, protoc_gen_zig, &.{
         "examples/all_types.proto",
         "examples/only_enum.proto",
         "examples/person.proto",
@@ -100,7 +100,7 @@ pub fn build(b: *std.build.Builder) !void {
     main_tests.filter = test_filter;
 
     const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&main_tests.step);
+    test_step.dependOn(&b.addRunArtifact(main_tests).step);
 
     const conformance_exe = b.addExecutable(.{
         .name = "conformance",

@@ -21,6 +21,7 @@ const String = extern_types.String;
 const top_level = @This();
 const genc = @import("gen-c.zig");
 const genzig = @import("gen-zig.zig");
+const log = common.log;
 
 const output_format = @import("build_options").output_format;
 
@@ -36,7 +37,7 @@ pub const GenError = error{
 };
 
 pub fn genErr(comptime fmt: []const u8, args: anytype, err: anyerror) anyerror {
-    std.log.err(fmt, args);
+    log.err(fmt, args);
     return err;
 }
 
@@ -324,7 +325,7 @@ pub fn gen(ctx: *Context) !CodeGeneratorResponse {
     res.set(.supported_features, @intCast(u64, @enumToInt(CodeGeneratorResponse.Feature.FEATURE_PROTO3_OPTIONAL)));
 
     if (output_format == .c) {
-        std.log.err("TODO support output_format == .c", .{});
+        log.err("TODO support output_format == .c", .{});
         return error.Todo;
     }
 
