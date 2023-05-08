@@ -7,18 +7,20 @@ test {
 // $ zig test src/tests.zig --mod protobuf:protobuf:src/lib.zig --mod generated:protobuf:zig-cache/protobuf-zig/lib.zig --deps protobuf,generated
 test "readme" {
     // Note - the package 'protobuf' below is src/lib.zig.  this package must
-    // include itself. i hope to remove this requirement soon.  it can be
-    // provided in build.zig or on the command line:
+    // include itself. it can be provided in build.zig or on the command line
+    // as shown below.
     const std = @import("std");
     const pb = @import("protobuf");
     const Person = @import("generated").person.Person;
 
     // serialize to a writer
     const alloc = std.testing.allocator; // could be any zig std.mem.Allocator
-    var zero = Person.init();
+    var zero = Person.initFields(.{
+        .id = 1,
+        .name = pb.extern_types.String.init("zero"),
+        .kind = .NONE,
+    });
     zero.set(.id, 0);
-    zero.set(.name, pb.extern_types.String.init("zero"));
-    zero.set(.kind, .NONE);
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
     try pb.protobuf.serialize(&zero.base, buf.writer());

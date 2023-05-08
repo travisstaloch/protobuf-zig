@@ -65,18 +65,20 @@ only_enum.pb.zig  person.pb.zig
 ```zig
 test "readme" {
     // Note - the package 'protobuf' below is src/lib.zig.  this package must
-    // include itself.  it can be provided in build.zig or on the command line 
-    // as shown below.
+    // include itself. it can be provided in build.zig or on the command line
+    // as shown below.    
     const std = @import("std");
     const pb = @import("protobuf");
     const Person = @import("generated").person.Person;
 
     // serialize to a writer
     const alloc = std.testing.allocator; // could be any zig std.mem.Allocator
-    var zero = Person.init();
+    var zero = Person.initFields(.{
+        .id = 1,
+        .name = pb.extern_types.String.init("zero"),
+        .kind = .NONE,
+    });
     zero.set(.id, 0);
-    zero.set(.name, pb.extern_types.String.init("zero"));
-    zero.set(.kind, .NONE);
     var buf = std.ArrayList(u8).init(alloc);
     defer buf.deinit();
     try pb.protobuf.serialize(&zero.base, buf.writer());
@@ -96,7 +98,8 @@ test "readme" {
     try std.testing.expectEqual(zero.kind, zero_copy.kind);
 
     // serialize to json
-    const stderr = std.io.getStdErr().writer();
+    // const stderr = std.io.getStdErr().writer();
+    const stderr = std.io.null_writer;
     try pb.json.serialize(&zero.base, stderr, .{
         .pretty_print = .{ .indent_size = 2 },
     });

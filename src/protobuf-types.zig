@@ -48,6 +48,18 @@ fn Init(comptime T: type) fn () T {
     }.init;
 }
 
+fn InitFields(comptime T: type) fn (anytype) T {
+    return struct {
+        pub fn initFields(fields: anytype) T {
+            var result = T.init();
+            inline for (@typeInfo(@TypeOf(fields)).Struct.fields) |field| {
+                result.set(@field(types.FieldEnum(T), field.name), @field(fields, field.name));
+            }
+            return result;
+        }
+    }.initFields;
+}
+
 fn SetPresent(comptime T: type) fn (*T, comptime types.FieldEnum(T)) void {
     return struct {
         pub fn setPresent(self: *T, comptime field_enum: types.FieldEnum(T)) void {
@@ -201,6 +213,7 @@ fn Format(comptime T: type) FormatFn(T) {
 pub const reserved_words = std.ComptimeStringMap(void, .{
     .{ "init", {} },
     .{ "initBytes", {} },
+    .{ "initFields", {} },
     .{ "format", {} },
     .{ "setPresent", {} },
     .{ "activeTag", {} },
@@ -214,6 +227,7 @@ pub fn MessageMixins(comptime Self: type) type {
     return struct {
         pub const init = Init(Self);
         pub const initBytes = InitBytes(Self);
+        pub const initFields = InitFields(Self);
         pub const format = Format(Self);
         pub const descriptor = MessageDescriptor.init(Self);
         pub const setPresent = SetPresent(Self);
