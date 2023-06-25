@@ -322,7 +322,7 @@ pub fn genPopulateMaps(ctx: *Context) !void {
 pub fn gen(ctx: *Context) !CodeGeneratorResponse {
     var res = CodeGeneratorResponse.init();
     try genPopulateMaps(ctx);
-    res.set(.supported_features, @intCast(u64, @enumToInt(CodeGeneratorResponse.Feature.FEATURE_PROTO3_OPTIONAL)));
+    res.set(.supported_features, @intCast(u64, @intFromEnum(CodeGeneratorResponse.Feature.FEATURE_PROTO3_OPTIONAL)));
 
     if (output_format == .c) {
         log.err("TODO support output_format == .c", .{});

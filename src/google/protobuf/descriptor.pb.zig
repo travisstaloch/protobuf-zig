@@ -504,7 +504,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "public_dependency"),
             null,
             null,
-            @enumToInt(FieldDescriptor.FieldFlag.FLAG_PACKED),
+            @intFromEnum(FieldDescriptor.FieldFlag.FLAG_PACKED),
         ),
         FieldDescriptor.init(
             "weak_dependency",
@@ -514,7 +514,7 @@ pub const FileDescriptorProto = extern struct {
             @offsetOf(FileDescriptorProto, "weak_dependency"),
             null,
             null,
-            @enumToInt(FieldDescriptor.FieldFlag.FLAG_PACKED),
+            @intFromEnum(FieldDescriptor.FieldFlag.FLAG_PACKED),
         ),
         FieldDescriptor.init(
             "message_type",
@@ -1326,7 +1326,7 @@ pub const SourceCodeInfo = extern struct {
                 @offsetOf(Location, "path"),
                 null,
                 null,
-                @enumToInt(FieldDescriptor.FieldFlag.FLAG_PACKED),
+                @intFromEnum(FieldDescriptor.FieldFlag.FLAG_PACKED),
             ),
             FieldDescriptor.init(
                 "span",
@@ -1336,7 +1336,7 @@ pub const SourceCodeInfo = extern struct {
                 @offsetOf(Location, "span"),
                 null,
                 null,
-                @enumToInt(FieldDescriptor.FieldFlag.FLAG_PACKED),
+                @intFromEnum(FieldDescriptor.FieldFlag.FLAG_PACKED),
             ),
             FieldDescriptor.init(
                 "leading_comments",
@@ -1648,7 +1648,7 @@ pub const GeneratedCodeInfo = extern struct {
         source_file: String = String.empty,
         begin: i32 = 0,
         end: i32 = 0,
-        semantic: GeneratedCodeInfo.Annotation.Semantic = @intToEnum(GeneratedCodeInfo.Annotation.Semantic, 0),
+        semantic: GeneratedCodeInfo.Annotation.Semantic = @enumFromInt(GeneratedCodeInfo.Annotation.Semantic, 0),
 
         pub const field_ids = [_]c_uint{ 1, 2, 3, 4, 5 };
         pub const opt_field_ids = [_]c_uint{ 2, 3, 4, 5 };
@@ -1664,7 +1664,7 @@ pub const GeneratedCodeInfo = extern struct {
                 @offsetOf(GeneratedCodeInfo.Annotation, "path"),
                 null,
                 null,
-                @enumToInt(FieldDescriptor.FieldFlag.FLAG_PACKED),
+                @intFromEnum(FieldDescriptor.FieldFlag.FLAG_PACKED),
             ),
             FieldDescriptor.init(
                 "source_file",

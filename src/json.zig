@@ -159,7 +159,7 @@ pub fn serializeImpl(
         else
             _ = try writer.write(":");
         if (child_options.pretty_print) |cpp|
-            _ = try writer.write(" "[0..@boolToInt(cpp.separator)]);
+            _ = try writer.write(" "[0..@intFromBool(cpp.separator)]);
         const value_field = desc.fields.slice()[1];
         assert(value_field.id == 2);
         try serializeField(
@@ -190,7 +190,7 @@ pub fn serializeImpl(
             \\"{}":
         , .{field.name});
         if (child_options.pretty_print) |cpp|
-            _ = try writer.write(" "[0..@boolToInt(cpp.separator)]);
+            _ = try writer.write(" "[0..@intFromBool(cpp.separator)]);
 
         try serializeField(
             FieldInfo.init(

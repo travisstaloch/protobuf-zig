@@ -72,7 +72,7 @@ pub fn encodeMessage(comptime parts: anytype) []const u8 {
             comptime_int => result = result ++
                 encodeVarint(usize, @field(parts, f.name)),
             bool => result = result ++
-                encodeVarint(u8, @boolToInt(@field(parts, f.name))),
+                encodeVarint(u8, @intFromBool(@field(parts, f.name))),
             else => if (std.meta.trait.isZigString(f.type)) {
                 result = result ++ @field(parts, f.name);
             } else if (std.meta.trait.isIntegral(f.type)) {
@@ -103,7 +103,7 @@ pub fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
         .Float => try std.testing.expectApproxEqAbs(
             data,
             data2,
-            std.math.epsilon(T),
+            std.math.floatEps(T),
         ),
         .Struct => if (T == String) {
             try std.testing.expectEqualStrings(data.slice(), data2.slice());
@@ -168,7 +168,7 @@ pub fn testInit(
         .Int => return @intCast(T, field_id.?),
         .Bool => return true,
         .Enum => return std.meta.tags(T)[0],
-        .Float => return @intToFloat(T, field_id.?),
+        .Float => return @floatFromInt(T, field_id.?),
         .Struct => if (T == String) {
             return String.init(try std.fmt.allocPrint(alloc, "{}", .{field_id.?}));
         } else if (comptime mem.indexOf(

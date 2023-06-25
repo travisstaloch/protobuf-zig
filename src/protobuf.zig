@@ -92,7 +92,7 @@ pub fn writeVarint128(comptime T: type, _value: T, writer: anytype, comptime mod
     while (x != 0) {
         const lopart: u8 = @truncate(u7, x);
         x >>= 7;
-        const hipart = @as(u8, 0b1000_0000) * @boolToInt(x != 0);
+        const hipart = @as(u8, 0b1000_0000) * @intFromBool(x != 0);
         try writer.writeByte(hipart | lopart);
     }
 }
@@ -154,7 +154,7 @@ const Ctx = struct {
     }
 
     pub fn bytesRead(ctx: Ctx) usize {
-        return @ptrToInt(ctx.data.ptr) - @ptrToInt(ctx.data_start.ptr);
+        return @intFromPtr(ctx.data.ptr) - @intFromPtr(ctx.data_start.ptr);
     }
 
     pub fn skip(ctx: *Ctx, len: u32) !void {
@@ -231,8 +231,8 @@ fn genericMessageInit(desc: *const MessageDescriptor) Message {
                 => @memcpy(field_bytes[0..@sizeOf(String)], default[0..@sizeOf(String)]),
                 .TYPE_MESSAGE => { //
                     if (true) @panic("TODO - TYPE_STRING/MESSAGE default_value");
-                    mem.writeIntLittle(usize, field_bytes[0..8], @ptrToInt(field.default_value));
-                    const ptr = @intToPtr(?*anyopaque, @bitCast(usize, field_bytes[0..8].*));
+                    mem.writeIntLittle(usize, field_bytes[0..8], @intFromPtr(field.default_value));
+                    const ptr = @ptrFromInt(?*anyopaque, @bitCast(usize, field_bytes[0..8].*));
                     log.debug("genericMessageInit() string/message ptr {} field.default_value {}", .{ ptrfmt(ptr), ptrfmt(field.default_value) });
                     assert(ptr == field.default_value);
                 },
@@ -267,7 +267,7 @@ const ScannedMember = struct {
 
     fn maxB128Numbers(data: []const u8) usize {
         var result: usize = 0;
-        for (data) |c| result += @boolToInt(c & 0x80 == 0);
+        for (data) |c| result += @intFromBool(c & 0x80 == 0);
         return result;
     }
 
@@ -360,7 +360,7 @@ fn parsePackedRepeatedMember(
             .TYPE_DOUBLE,
             => packedReadAndListAdd(u64, reader, member, null),
             .TYPE_BOOL => if (readVarint128(u64, reader, .int)) |rawint| {
-                listAppend(member, ListMut(u32), @boolToInt(rawint != 0));
+                listAppend(member, ListMut(u32), @intFromBool(rawint != 0));
             } else |e| e,
             .TYPE_STRING,
             .TYPE_MESSAGE,
@@ -562,7 +562,7 @@ fn parseRequiredMember(
         },
         .TYPE_BOOL => {
             if (wire_type != .VARINT) return error.FieldMissing;
-            const int = @boolToInt(try scanned_member.readVarint128(u64, .int) != 0);
+            const int = @intFromBool(try scanned_member.readVarint128(u64, .int) != 0);
             log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(u32), int);
@@ -977,10 +977,12 @@ fn serializeOptionalField(
 ) (@TypeOf(writer).Error || Error)!void {
     if (!message.hasFieldId(field.id)) return;
     if (field.type == .TYPE_STRING and
-        ptrAlignCast(*const String, member).items == field.default_value)
+        field.default_value != null and
+        ptrAlignCast(*const String, member).items == @ptrCast([*]const u8, field.default_value))
         return
     else if (field.type == .TYPE_MESSAGE and
-        ptrAlignCast(*const *Message, member).* == field.default_value)
+        field.default_value != null and
+        ptrAlignCast(*const *Message, member).* == ptrAlignCast(*const Message, field.default_value))
         return;
 
     log.debug(

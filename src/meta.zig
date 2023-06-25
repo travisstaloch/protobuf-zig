@@ -80,7 +80,7 @@ pub fn fieldInfo(comptime T: type, comptime field: FieldEnum(T)) switch (@typeIn
     // .Enum => std.builtin.Type.EnumField,
     else => @compileError("Expected struct, union, error set or enum type, found '" ++ @typeName(T) ++ "'"),
 } {
-    return fields(T)[@enumToInt(field)];
+    return fields(T)[@intFromEnum(field)];
 }
 
 /// copy of std.meta.fieldIndex

@@ -29,7 +29,7 @@ pub fn ptrAlignCast(comptime Ptr: type, ptr: anytype) Ptr {
 }
 
 pub fn ptrfmt(ptr: anytype) PtrFmt {
-    return .{ .ptr = @ptrToInt(ptr) };
+    return .{ .ptr = @intFromPtr(ptr) };
 }
 
 pub const PtrFmt = struct {

@@ -42,7 +42,7 @@ test "basic ser" {
 
     const message = comptime encodeMessage(.{
         Tag.init(.VARINT, 1), // FieldOptions.ctype
-        @enumToInt(descr.FieldOptions.CType.STRING),
+        @intFromEnum(descr.FieldOptions.CType.STRING),
         Tag.init(.VARINT, 5), // FieldOptions.lazy
         true,
         Tag.init(.LEN, 999), // FieldOptions.uninterpreted_option
@@ -81,7 +81,7 @@ test "packed repeated ser 1" {
                 @offsetOf(@This(), "f"),
                 null,
                 null,
-                @enumToInt(pb.types.FieldDescriptor.FieldFlag.FLAG_PACKED),
+                @intFromEnum(pb.types.FieldDescriptor.FieldFlag.FLAG_PACKED),
             ),
         };
     };

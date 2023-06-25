@@ -25,7 +25,7 @@ pub const zig_extension = "pb.zig";
 fn typenamesMatch(absolute_typename: []const u8, package: []const u8, typename: []const u8) bool {
     const result = absolute_typename.len >= package.len + typename.len + 1 and
         mem.eql(u8, absolute_typename[1 .. 1 + package.len], package) and
-        mem.eql(u8, absolute_typename[1 + package.len + @boolToInt(package.len > 0) ..], typename);
+        mem.eql(u8, absolute_typename[1 + package.len + @intFromBool(package.len > 0) ..], typename);
     return result;
 }
 

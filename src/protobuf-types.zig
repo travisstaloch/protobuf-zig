@@ -136,7 +136,7 @@ pub fn setFieldHelp(
     self.setPresent(field_enum);
     const tagname = @tagName(field_enum);
     log.debug("setFieldHelp() .{s}={}", .{ tagname, value });
-    const field = types.fields(T)[@enumToInt(field_enum)];
+    const field = types.fields(T)[@intFromEnum(field_enum)];
     const F = field.ty();
     if (field == .union_field) {
         const i = comptime mem.indexOf(u8, tagname, "__") orelse unreachable;
@@ -194,7 +194,7 @@ fn enumValuesByNumber(comptime T: type) []const EnumValue {
     var result: [tags.len]EnumValue = undefined;
     for (tags, 0..) |tag, i| {
         result[i] = .{
-            .value = @enumToInt(tag),
+            .value = @intFromEnum(tag),
             .name = String.init(@tagName(tag)),
             .zig_name = String.init(@typeName(T) ++ "." ++ @tagName(tag)),
         };
@@ -288,7 +288,7 @@ pub const EnumDescriptor = extern struct {
 };
 
 pub fn flagsContain(flags: u32, flag: anytype) bool {
-    return flags & @enumToInt(flag) != 0;
+    return flags & @intFromEnum(flag) != 0;
 }
 
 pub const FieldDescriptor = extern struct {
@@ -397,7 +397,7 @@ pub const MessageDescriptor = extern struct {
             else
                 &.{};
             const flags = if (@hasDecl(T, "is_map_entry") and T.is_map_entry)
-                @enumToInt(Flag.FLAG_MAP_TYPE)
+                @intFromEnum(Flag.FLAG_MAP_TYPE)
             else
                 0;
             var result: MessageDescriptor = .{
@@ -441,7 +441,7 @@ pub const MessageDescriptor = extern struct {
             var n_oneof_fields: u32 = 0;
             for (fields.slice()) |field|
                 n_oneof_fields +=
-                    @boolToInt(flagsContain(field.flags, FieldFlag.FLAG_ONEOF));
+                    @intFromBool(flagsContain(field.flags, FieldFlag.FLAG_ONEOF));
             const len = @typeInfo(T).Struct.fields.len;
             const actual_len = fields.len + 1 -
                 (n_oneof_fields -| oneof_field_ids.len);

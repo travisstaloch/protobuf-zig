@@ -25,7 +25,7 @@ pub const Tag = extern struct {
     /// The smallest field number you can specify is 1, and the largest is 229
     field_id: u32,
     pub inline fn encode(key: Tag) u32 {
-        return (key.field_id << 3) | @enumToInt(key.wire_type);
+        return (key.field_id << 3) | @intFromEnum(key.wire_type);
     }
     pub fn init(wire_type: WireType, field_id: u32) Tag {
         return .{

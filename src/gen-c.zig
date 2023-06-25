@@ -403,7 +403,7 @@ pub fn genMessage(
         _ = try cc_writer.write(" };\nstatic const uint32_t ");
         try writeCName(cc_writer, proto_file.package, node, ctx, null);
         var opt_fields_len: u32 = 0;
-        for (message.field.slice()) |field| opt_fields_len += @boolToInt(field.label == .LABEL_OPTIONAL);
+        for (message.field.slice()) |field| opt_fields_len += @intFromBool(field.label == .LABEL_OPTIONAL);
         try cc_writer.print("__opt_field_ids[{}] = {{ ", .{opt_fields_len});
         var nwritten: usize = 0;
         for (message.field.slice()) |field| {
