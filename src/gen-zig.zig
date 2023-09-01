@@ -432,7 +432,7 @@ pub fn genFieldDescriptors(
             \\
         , .{
             if (is_oneof)
-                message.oneof_decl.items[@intCast(usize, field.oneof_index)].name
+                message.oneof_decl.items[@as(usize, @intCast(field.oneof_index))].name
             else
                 field.name,
         });
