@@ -179,8 +179,8 @@ fn writeCMacroName(
     // nested messages and enums have 'parent names' which need to be included.
     // field names (.named) are absolute and don't need parent names included.
     if (switch (node) {
-        .enum_ => |ptr| @as(?*const anyopaque, @ptrCast(ptr)),
-        .message => |ptr| @as(?*const anyopaque, @ptrCast(ptr)),
+        .enum_ => |ptr| @ptrCast(?*const anyopaque, ptr),
+        .message => |ptr| @ptrCast(?*const anyopaque, ptr),
         .named => null,
     }) |id| blk: {
         const parent = ctx.?.parents.get(id) orelse break :blk;
@@ -480,8 +480,8 @@ pub fn writeCName(
     // nested messages and enums have 'parent names' which need to be included.
     // field names (.named) are absolute and don't need parent names included.
     if (switch (node) {
-        .enum_ => |ptr| @as(?*const anyopaque, @ptrCast(ptr)),
-        .message => |ptr| @as(?*const anyopaque, @ptrCast(ptr)),
+        .enum_ => |ptr| @ptrCast(?*const anyopaque, ptr),
+        .message => |ptr| @ptrCast(?*const anyopaque, ptr),
         .named => null,
     }) |id| blk: {
         const parent = ctx.?.parents.get(id) orelse break :blk;

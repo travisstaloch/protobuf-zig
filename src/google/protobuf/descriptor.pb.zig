@@ -1648,7 +1648,7 @@ pub const GeneratedCodeInfo = extern struct {
         source_file: String = String.empty,
         begin: i32 = 0,
         end: i32 = 0,
-        semantic: GeneratedCodeInfo.Annotation.Semantic = @enumFromInt(0),
+        semantic: GeneratedCodeInfo.Annotation.Semantic = @enumFromInt(GeneratedCodeInfo.Annotation.Semantic, 0),
 
         pub const field_ids = [_]c_uint{ 1, 2, 3, 4, 5 };
         pub const opt_field_ids = [_]c_uint{ 2, 3, 4, 5 };

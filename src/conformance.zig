@@ -28,7 +28,7 @@ pub fn main() !void {
 fn serializeTo(serializable: anytype, writer: anytype) !void {
     var countwriter = std.io.countingWriter(std.io.null_writer);
     try pb.protobuf.serialize(&serializable.base, countwriter.writer());
-    try writer.writeIntLittle(u32, @as(u32, @intCast(countwriter.bytes_written)));
+    try writer.writeIntLittle(u32, @intCast(u32, countwriter.bytes_written));
     try pb.protobuf.serialize(&serializable.base, writer);
 }
 

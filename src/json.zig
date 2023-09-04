@@ -132,7 +132,7 @@ pub fn serializeImpl(
     );
     // std.debug.print("+++ serialize {}", .{desc.name});
     try pb.protobuf.verifyMessageType(desc.magic, types.MESSAGE_DESCRIPTOR_MAGIC);
-    const buf = @as([*]const u8, @ptrCast(message))[0..desc.sizeof_message];
+    const buf = @ptrCast([*]const u8, message)[0..desc.sizeof_message];
 
     try writer.writeByte('{');
     var child_options = options;
@@ -305,7 +305,7 @@ fn serializeField(
                 try serializeFloat(float, writer);
             }
         } else try serializeFloat(
-            @as(f32, @bitCast(mem.readIntLittle(u32, member[0..4]))),
+            @bitCast(f32, mem.readIntLittle(u32, member[0..4])),
             writer,
         ),
         .TYPE_DOUBLE => if (child_info.is_repeated) {
@@ -316,7 +316,7 @@ fn serializeField(
                 try serializeFloat(d, writer);
             }
         } else try serializeFloat(
-            @as(f64, @bitCast(mem.readIntLittle(u64, member[0..8]))),
+            @bitCast(f64, mem.readIntLittle(u64, member[0..8])),
             writer,
         ),
         .TYPE_STRING => if (child_info.is_repeated) {
@@ -372,7 +372,7 @@ fn serializeField(
                     try serializeField(
                         FieldInfo.init(
                             key_field,
-                            @as([*]const u8, @ptrCast(subm)) + key_field.offset,
+                            @ptrCast([*]const u8, subm) + key_field.offset,
                             false,
                             child_info.options,
                         ),
