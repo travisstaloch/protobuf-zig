@@ -57,19 +57,19 @@ pub fn readVarint128(comptime T: type, reader: anytype, comptime mode: IntMode) 
     var value: u128 = 0;
     while (true) {
         const b = try reader.readByte();
-        value |= @as(u128, @truncate(u7, b)) << shift;
+        value |= @as(u128, @as(u7, @truncate(b))) << shift;
         if (b >> 7 == 0) break;
         shift += 7;
     }
     if (mode == .sint) {
         const U = std.meta.Int(.unsigned, @bitSizeOf(T));
         const S = std.meta.Int(.signed, @bitSizeOf(T));
-        const v = @truncate(U, value);
-        return (v >> 1) ^ @bitCast(U, -@bitCast(S, v & 1));
+        const v = @as(U, @truncate(value));
+        return (v >> 1) ^ @as(U, @bitCast(-@as(S, @bitCast(v & 1))));
     }
     return switch (@typeInfo(T).Int.signedness) {
-        .signed => @truncate(T, @bitCast(i128, value)),
-        .unsigned => @truncate(T, value),
+        .signed => @as(T, @truncate(@as(i128, @bitCast(value)))),
+        .unsigned => @as(T, @truncate(value)),
     };
 }
 
@@ -88,9 +88,9 @@ pub fn writeVarint128(comptime T: type, _value: T, writer: anytype, comptime mod
     }
     const U = std.meta.Int(.unsigned, @bitSizeOf(T));
     // try std.leb.writeULEB128(writer, @bitCast(U, value));
-    var x = @bitCast(U, value);
+    var x = @as(U, @bitCast(value));
     while (x != 0) {
-        const lopart: u8 = @truncate(u7, x);
+        const lopart: u8 = @as(u7, @truncate(x));
         x >>= 7;
         const hipart = @as(u8, 0b1000_0000) * @intFromBool(x != 0);
         try writer.writeByte(hipart | lopart);
@@ -172,7 +172,7 @@ const Ctx = struct {
         var ctxfbs = ctx.fbs();
         const reader = ctxfbs.reader();
         const value = try top_level.readVarint128(T, reader, mode);
-        try ctx.skip(@intCast(u32, ctxfbs.pos));
+        try ctx.skip(@as(u32, @intCast(ctxfbs.pos)));
         return value;
     }
 
@@ -180,7 +180,7 @@ const Ctx = struct {
         const tag = try ctx.readVarint128(u32, .int);
         return Tag{
             .wire_type = std.meta.intToEnum(WireType, tag & 0b111) catch {
-                log.err("readTag() invalid wire_type {}. tag {}:0x{x}:0b{b:0>8} field_id {}", .{ @truncate(u3, tag), tag, tag, tag, tag >> 3 });
+                log.err("readTag() invalid wire_type {}. tag {}:0x{x}:0b{b:0>8} field_id {}", .{ @as(u3, @truncate(tag)), tag, tag, tag, tag >> 3 });
                 return error.InvalidTag;
             },
             .field_id = tag >> 3,
@@ -188,14 +188,14 @@ const Ctx = struct {
     }
 
     pub fn scanLengthPrefixedData(ctx: *Ctx) ![2]u32 {
-        const startlen = @intCast(u32, ctx.data.len);
+        const startlen = @as(u32, @intCast(ctx.data.len));
         const len = try ctx.readVarint128(u32, .int);
-        return .{ startlen - @intCast(u32, ctx.data.len), len };
+        return .{ startlen - @as(u32, @intCast(ctx.data.len)), len };
     }
 };
 
 fn structMemberPtr(comptime T: type, message: *Message, offset: usize) *T {
-    return ptrAlignCast(*T, @ptrCast([*]u8, message) + offset);
+    return ptrAlignCast(*T, @as([*]u8, @ptrCast(message)) + offset);
 }
 
 fn genericMessageInit(desc: *const MessageDescriptor) Message {
@@ -207,8 +207,8 @@ fn genericMessageInit(desc: *const MessageDescriptor) Message {
             .{ field.name, ptrfmt(field.default_value), @tagName(field.label) },
         );
         if (field.default_value != null and field.label != .LABEL_REPEATED) {
-            var field_bytes = @ptrCast([*]u8, &message) + field.offset;
-            const default = @ptrCast([*]const u8, field.default_value);
+            var field_bytes = @as([*]u8, @ptrCast(&message)) + field.offset;
+            const default = @as([*]const u8, @ptrCast(field.default_value));
             switch (field.type) {
                 .TYPE_INT32,
                 .TYPE_SINT32,
@@ -232,7 +232,7 @@ fn genericMessageInit(desc: *const MessageDescriptor) Message {
                 .TYPE_MESSAGE => { //
                     if (true) @panic("TODO - TYPE_STRING/MESSAGE default_value");
                     mem.writeIntLittle(usize, field_bytes[0..8], @intFromPtr(field.default_value));
-                    const ptr = @ptrFromInt(?*anyopaque, @bitCast(usize, field_bytes[0..8].*));
+                    const ptr = @as(?*anyopaque, @ptrFromInt(@as(usize, @bitCast(field_bytes[0..8].*))));
                     log.debug("genericMessageInit() string/message ptr {} field.default_value {}", .{ ptrfmt(ptr), ptrfmt(field.default_value) });
                     assert(ptr == field.default_value);
                 },
@@ -662,7 +662,7 @@ fn parseMember(
         "parseMember() '{s}' .{s} .{s} ",
         .{ field.name, @tagName(field.label), @tagName(field.type) },
     );
-    var member = @ptrCast([*]u8, message) + field.offset;
+    var member = @as([*]u8, @ptrCast(message)) + field.offset;
     return switch (field.label) {
         .LABEL_REQUIRED => parseRequiredMember(scanned_member, member, message, ctx, true),
         .LABEL_OPTIONAL, .LABEL_NONE => if (flagsContain(field.flags, FieldFlag.FLAG_ONEOF))
@@ -782,7 +782,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                 );
                 mfield = &desc_fields[field_index];
                 last_field = mfield;
-                last_field_index = @intCast(u32, field_index);
+                last_field_index = @as(u32, @intCast(field_index));
             } else |_| {
                 log.debug("(scan) field_id {} not found", .{tag.field_id});
                 mfield = null;
@@ -802,14 +802,14 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
             .tag = tag,
             .field = mfield,
             .data = ctx.data.ptr,
-            .data_len = @intCast(u32, ctx.data.len),
+            .data_len = @as(u32, @intCast(ctx.data.len)),
         };
 
         switch (tag.wire_type) {
             .VARINT => {
                 const startlen = ctx.data.len;
                 _ = try ctx.readVarint128(usize, .int);
-                sm.data_len = @intCast(u32, startlen - ctx.data.len);
+                sm.data_len = @as(u32, @intCast(startlen - ctx.data.len));
             },
             .I64 => {
                 if (ctx.data.len < 8) {
@@ -851,13 +851,13 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                 // for nested groups with the same field number?  if so, need to
                 // adapt this search to allow for finding 'starttag's before
                 // endtag
-                sm.data_len = @intCast(u32, mem.indexOf(u8, ctx.data, endtag_bytes) orelse
+                sm.data_len = @as(u32, @intCast(mem.indexOf(u8, ctx.data, endtag_bytes) orelse
                     return deserializeErr(
                     "group missing end tag. field '{s}' {}",
                     .{ field.name, field.id },
                     error.InvalidData,
-                ));
-                try ctx.skip(sm.data_len + @intCast(u32, fbs.pos));
+                )));
+                try ctx.skip(sm.data_len + @as(u32, @intCast(fbs.pos)));
             },
             .EGROUP => {},
         }
@@ -978,7 +978,7 @@ fn serializeOptionalField(
     if (!message.hasFieldId(field.id)) return;
     if (field.type == .TYPE_STRING and
         field.default_value != null and
-        ptrAlignCast(*const String, member).items == @ptrCast([*]const u8, field.default_value))
+        ptrAlignCast(*const String, member).items == @as([*]const u8, @ptrCast(field.default_value)))
         return
     else if (field.type == .TYPE_MESSAGE and
         field.default_value != null and
@@ -1163,7 +1163,7 @@ fn serializeRequiredField(
             try serialize(subm.*, writer);
         },
         .TYPE_STRING, .TYPE_BYTES => {
-            const desc = @ptrCast(*const MessageDescriptor, message.descriptor);
+            const desc = @as(*const MessageDescriptor, @ptrCast(message.descriptor));
             const ismap = flagsContain(desc.flags, MessageDescriptor.Flag.FLAG_MAP_TYPE);
             log.info(".TYPE_STRING/.TYPE_BYTES ismap {}", .{ismap});
             const s = ptrAlignCast(*const String, member);
@@ -1209,7 +1209,7 @@ pub fn serialize(message: *const Message, writer: anytype) (@TypeOf(writer).Erro
     );
     log.info("+++ serialize {}", .{desc.name});
     try verifyMessageType(desc.magic, types.MESSAGE_DESCRIPTOR_MAGIC);
-    const buf = @ptrCast([*]const u8, message)[0..desc.sizeof_message];
+    const buf = @as([*]const u8, @ptrCast(message))[0..desc.sizeof_message];
     for (desc.fields.slice()) |field| {
         const member = buf.ptr + field.offset;
 
@@ -1230,7 +1230,7 @@ pub fn serialize(message: *const Message, writer: anytype) (@TypeOf(writer).Erro
 }
 
 fn debugit(m: *Message, comptime T: type) void {
-    const it = @ptrCast(*T, m);
+    const it = @as(*T, @ptrCast(m));
     _ = it;
     @breakpoint();
 }
