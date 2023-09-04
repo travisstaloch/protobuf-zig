@@ -596,7 +596,7 @@ pub const Message = extern struct {
         const desc = message.descriptor orelse unreachable;
         try writer.print("{s}{{", .{desc.name});
         const fields = desc.fields;
-        const bytes = @as([*]const u8, @ptrCast(message));
+        const bytes = @as([*]align(@alignOf(*Message)) const u8, @ptrCast(message));
         for (fields.slice(), 0..) |f, i| {
             const member = bytes + f.offset;
             const field_id = desc.field_ids.items[i];
@@ -742,7 +742,7 @@ pub const Message = extern struct {
         allocator: mem.Allocator,
         mode: enum { all_fields, only_pointer_fields },
     ) void {
-        const bytes = @as([*]u8, @ptrCast(m));
+        const bytes = @as([*]align(@alignOf(*Message)) u8, @ptrCast(m));
         const desc = m.descriptor orelse
             panicf("can't deinit a message with no descriptor.", .{});
 
@@ -835,7 +835,7 @@ pub const Message = extern struct {
                     );
                     var subm = ptrAlignCast(**Message, bytes + field.offset);
                     deinitImpl(subm.*, allocator, .only_pointer_fields);
-                    const subbytes = @as([*]u8, @ptrCast(subm.*));
+                    const subbytes = @as([*]align(@alignOf(*Message)) u8, @ptrCast(subm.*));
                     const subdesc = subm.*.descriptor orelse
                         panicf("can't deinit a message with no descriptor.", .{});
                     allocator.free(subbytes[0..subdesc.sizeof_message]);
