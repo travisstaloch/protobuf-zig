@@ -182,7 +182,7 @@ fn fieldIndicesByName(comptime field_descriptors: []const FieldDescriptor) []con
         }
     }.lessThan;
     for (field_descriptors, 0..) |fd, i|
-        tups[i] = .{ @as(c_uint, @intCast(i)), fd.name.slice() };
+        tups[i] = .{ @intCast(c_uint, i), fd.name.slice() };
     std.sort.sort(Tup, &tups, {}, lessThan);
     var result: [field_descriptors.len]c_uint = undefined;
     for (tups, 0..) |tup, i| result[i] = tup[0];
@@ -544,7 +544,7 @@ pub const Message = extern struct {
         const desc = m.descriptor orelse unreachable;
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse
             return true;
-        return (m.optional_fields_present >> @as(u6, @intCast(opt_field_idx))) & 1 != 0;
+        return (m.optional_fields_present >> @intCast(u6, opt_field_idx)) & 1 != 0;
     }
 
     /// set `m.optional_fields_present` at the field index corresponding to
@@ -554,7 +554,7 @@ pub const Message = extern struct {
             @panic("called setPresent() on a message with no descriptor.");
         log.debug("setPresent({})", .{field_id});
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse return;
-        m.optional_fields_present |= @as(u64, 1) << @as(u6, @intCast(opt_field_idx));
+        m.optional_fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx);
         log.debug("setPresent 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
         // TODO if oneof field, remove other fields w/ same oneof_index
     }
@@ -567,9 +567,9 @@ pub const Message = extern struct {
         log.debug("setPresentValue({}, {})", .{ field_id, value });
         const opt_field_idx = desc.optionalFieldIndex(field_id) orelse return;
         if (value)
-            m.optional_fields_present |= @as(u64, 1) << @as(u6, @intCast(opt_field_idx))
+            m.optional_fields_present |= @as(u64, 1) << @intCast(u6, opt_field_idx)
         else
-            m.optional_fields_present &= ~(@as(u64, 1) << @as(u6, @intCast(opt_field_idx)));
+            m.optional_fields_present &= ~(@as(u64, 1) << @intCast(u6, opt_field_idx));
         log.debug("setPresentValue 2 m.optional_fields_present {b:0>64}", .{m.optional_fields_present});
         // TODO if oneof field, remove other fields w/ same oneof_index
     }
@@ -589,14 +589,14 @@ pub const Message = extern struct {
             log.err("expected '{s}' to contain '{s}'", .{ @typeName(T), m.descriptor.?.name });
             return error.TypeMismatch;
         }
-        return @as(*T, @ptrCast(m));
+        return @ptrCast(*T, m);
     }
 
     pub fn formatMessage(message: *const Message, writer: anytype) WriteErr!void {
         const desc = message.descriptor orelse unreachable;
         try writer.print("{s}{{", .{desc.name});
         const fields = desc.fields;
-        const bytes = @as([*]align(@alignOf(*Message)) const u8, @ptrCast(message));
+        const bytes = @ptrCast([*]const u8, message);
         for (fields.slice(), 0..) |f, i| {
             const member = bytes + f.offset;
             const field_id = desc.field_ids.items[i];
@@ -652,7 +652,7 @@ pub const Message = extern struct {
                             try writer.print("{}", .{it});
                         }
                         _ = try writer.write("}");
-                    } else try writer.print(".{s} = {}", .{ field_name, @as(i32, @bitCast(member[0..4].*)) });
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(i32, member[0..4].*) });
                 },
                 .TYPE_UINT32, .TYPE_FIXED32 => {
                     if (f.label == .LABEL_REPEATED) {
@@ -664,7 +664,7 @@ pub const Message = extern struct {
                             try writer.print("{}", .{it});
                         }
                         _ = try writer.write("}");
-                    } else try writer.print(".{s} = {}", .{ field_name, @as(u32, @bitCast(member[0..4].*)) });
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(u32, member[0..4].*) });
                 },
                 .TYPE_INT64, .TYPE_SINT64, .TYPE_SFIXED64 => {
                     if (f.label == .LABEL_REPEATED) {
@@ -676,7 +676,7 @@ pub const Message = extern struct {
                             try writer.print("{}", .{it});
                         }
                         _ = try writer.write("}");
-                    } else try writer.print(".{s} = {}", .{ field_name, @as(i64, @bitCast(member[0..8].*)) });
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(i64, member[0..8].*) });
                 },
                 .TYPE_UINT64, .TYPE_FIXED64 => {
                     if (f.label == .LABEL_REPEATED) {
@@ -688,7 +688,7 @@ pub const Message = extern struct {
                             try writer.print("{}", .{it});
                         }
                         _ = try writer.write("}");
-                    } else try writer.print(".{s} = {}", .{ field_name, @as(u64, @bitCast(member[0..8].*)) });
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(u64, member[0..8].*) });
                 },
                 .TYPE_FLOAT => {
                     if (f.label == .LABEL_REPEATED) {
@@ -700,7 +700,7 @@ pub const Message = extern struct {
                             try writer.print("{}", .{it});
                         }
                         _ = try writer.write("}");
-                    } else try writer.print(".{s} = {}", .{ field_name, @as(f32, @bitCast(member[0..4].*)) });
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(f32, member[0..4].*) });
                 },
                 .TYPE_DOUBLE => {
                     if (f.label == .LABEL_REPEATED) {
@@ -712,7 +712,7 @@ pub const Message = extern struct {
                             try writer.print("{}", .{it});
                         }
                         _ = try writer.write("}");
-                    } else try writer.print(".{s} = {}", .{ field_name, @as(f64, @bitCast(member[0..8].*)) });
+                    } else try writer.print(".{s} = {}", .{ field_name, @bitCast(f64, member[0..8].*) });
                 },
                 else => {
                     todo(".{s} .{s}", .{ @tagName(f.type), @tagName(f.label) });
@@ -742,7 +742,7 @@ pub const Message = extern struct {
         allocator: mem.Allocator,
         mode: enum { all_fields, only_pointer_fields },
     ) void {
-        const bytes = @as([*]align(@alignOf(*Message)) u8, @ptrCast(m));
+        const bytes = @ptrCast([*]u8, m);
         const desc = m.descriptor orelse
             panicf("can't deinit a message with no descriptor.", .{});
 
@@ -805,7 +805,7 @@ pub const Message = extern struct {
                             .TYPE_SFIXED64,
                             .TYPE_SINT64,
                             => {
-                                const ptr: [*]align(8) u8 = @ptrCast(@alignCast(list.items));
+                                const ptr = @alignCast(8, list.items);
                                 allocator.free(ptr[0 .. size * list.cap]);
                             },
                             .TYPE_FLOAT,
@@ -817,7 +817,7 @@ pub const Message = extern struct {
                             .TYPE_SINT32,
                             .TYPE_BOOL,
                             => {
-                                const ptr: [*]align(4) u8 = @ptrCast(@alignCast(list.items));
+                                const ptr = @alignCast(4, list.items);
                                 allocator.free(ptr[0 .. size * list.cap]);
                             },
                             else => {
@@ -835,7 +835,7 @@ pub const Message = extern struct {
                     );
                     var subm = ptrAlignCast(**Message, bytes + field.offset);
                     deinitImpl(subm.*, allocator, .only_pointer_fields);
-                    const subbytes = @as([*]align(@alignOf(*Message)) u8, @ptrCast(subm.*));
+                    const subbytes = @ptrCast([*]u8, subm.*);
                     const subdesc = subm.*.descriptor orelse
                         panicf("can't deinit a message with no descriptor.", .{});
                     allocator.free(subbytes[0..subdesc.sizeof_message]);

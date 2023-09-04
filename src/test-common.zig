@@ -60,7 +60,7 @@ pub fn encodeInt(comptime T: type, i: T) []const u8 {
 
 pub fn encodeFloat(comptime T: type, i: T) []const u8 {
     const U = std.meta.Int(.unsigned, @typeInfo(T).Float.bits);
-    return encodeInt(U, @as(U, @bitCast(i)));
+    return encodeInt(U, @bitCast(U, i));
 }
 
 pub fn encodeMessage(comptime parts: anytype) []const u8 {
@@ -165,10 +165,10 @@ pub fn testInit(
 ) mem.Allocator.Error!T {
     @setEvalBranchQuota(10_000);
     switch (@typeInfo(T)) {
-        .Int => return @as(T, @intCast(field_id.?)),
+        .Int => return @intCast(T, field_id.?),
         .Bool => return true,
         .Enum => return std.meta.tags(T)[0],
-        .Float => return @as(T, @floatFromInt(field_id.?)),
+        .Float => return @floatFromInt(T, field_id.?),
         .Struct => if (T == String) {
             return String.init(try std.fmt.allocPrint(alloc, "{}", .{field_id.?}));
         } else if (comptime mem.indexOf(
