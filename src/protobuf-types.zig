@@ -805,7 +805,7 @@ pub const Message = extern struct {
                             .TYPE_SFIXED64,
                             .TYPE_SINT64,
                             => {
-                                const ptr = @alignCast(8, list.items);
+                                const ptr: [*]align(8) u8 = @ptrCast(@alignCast(list.items));
                                 allocator.free(ptr[0 .. size * list.cap]);
                             },
                             .TYPE_FLOAT,
@@ -817,7 +817,7 @@ pub const Message = extern struct {
                             .TYPE_SINT32,
                             .TYPE_BOOL,
                             => {
-                                const ptr = @alignCast(4, list.items);
+                                const ptr: [*]align(4) u8 = @ptrCast(@alignCast(list.items));
                                 allocator.free(ptr[0 .. size * list.cap]);
                             },
                             else => {
