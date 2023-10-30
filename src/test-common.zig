@@ -11,9 +11,9 @@ const String = pb.extern_types.String;
 /// 2. run the following
 ///    $ protoc --plugin protoc-gen-zig=zig-out/bin/protoc-echo-to-stderr --zig_out=gen `protofile`
 pub fn parseWithSystemProtoc(protofile: []const u8, alloc: mem.Allocator) ![]const u8 {
-    _ = try std.ChildProcess.exec(.{ .allocator = alloc, .argv = &.{ "zig", "build" } });
+    _ = try std.ChildProcess.run(.{ .allocator = alloc, .argv = &.{ "zig", "build" } });
 
-    const r = try std.ChildProcess.exec(.{
+    const r = try std.ChildProcess.run(.{
         .allocator = alloc,
         .argv = &.{
             "protoc",
