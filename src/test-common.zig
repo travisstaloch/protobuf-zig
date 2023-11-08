@@ -54,7 +54,7 @@ pub fn encodeVarint(comptime T: type, i: T) []const u8 {
 pub fn encodeInt(comptime T: type, i: T) []const u8 {
     var buf: [32]u8 = undefined; // handles upto u512
     var fbs = std.io.fixedBufferStream(&buf);
-    fbs.writer().writeIntLittle(T, i) catch unreachable;
+    fbs.writer().writeInt(T, i, .little) catch unreachable;
     return fbs.getWritten();
 }
 

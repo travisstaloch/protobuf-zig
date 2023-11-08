@@ -28,7 +28,7 @@ pub fn main() !void {
 fn serializeTo(serializable: anytype, writer: anytype) !void {
     var countwriter = std.io.countingWriter(std.io.null_writer);
     try pb.protobuf.serialize(&serializable.base, countwriter.writer());
-    try writer.writeIntLittle(u32, @as(u32, @intCast(countwriter.bytes_written)));
+    try writer.writeInt(u32, @as(u32, @intCast(countwriter.bytes_written)), .little);
     try pb.protobuf.serialize(&serializable.base, writer);
 }
 
@@ -68,7 +68,7 @@ fn serveConformanceRequest() !bool {
     const allr = arena.allocator();
     var buf = std.ArrayList(u8).init(allr);
 
-    const in_len = stdin.readIntNative(u32) catch |err| return switch (err) {
+    const in_len = stdin.readInt(u32, .little) catch |err| return switch (err) {
         error.EndOfStream => true,
         else => err,
     };

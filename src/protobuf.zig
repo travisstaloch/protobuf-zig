@@ -231,7 +231,7 @@ fn genericMessageInit(desc: *const MessageDescriptor) Message {
                 => @memcpy(field_bytes[0..@sizeOf(String)], default[0..@sizeOf(String)]),
                 .TYPE_MESSAGE => { //
                     if (true) @panic("TODO - TYPE_STRING/MESSAGE default_value");
-                    mem.writeIntLittle(usize, field_bytes[0..8], @intFromPtr(field.default_value));
+                    mem.writeInt(usize, field_bytes[0..8], @intFromPtr(field.default_value), .little);
                     const ptr = @as(?*anyopaque, @ptrFromInt(@as(usize, @bitCast(field_bytes[0..8].*))));
                     log.debug("genericMessageInit() string/message ptr {} field.default_value {}", .{ ptrfmt(ptr), ptrfmt(field.default_value) });
                     assert(ptr == field.default_value);
@@ -325,7 +325,7 @@ fn packedReadAndListAdd(comptime T: type, reader: anytype, member: [*]u8, compti
     const int = if (mint_mode) |int_mode|
         try readVarint128(T, reader, int_mode)
     else
-        try reader.readIntLittle(T);
+        try reader.readInt(T, .little);
 
     listAppend(member, ListMut(T), int);
 }
@@ -518,7 +518,7 @@ fn parseRequiredMember(
             log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(u32), int);
-            } else mem.writeIntLittle(u32, member[0..4], int);
+            } else mem.writeInt(u32, member[0..4], int, .little);
         },
         .TYPE_SINT32 => {
             if (wire_type != .VARINT) return error.FieldMissing;
@@ -526,23 +526,23 @@ fn parseRequiredMember(
             log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(u32), int);
-            } else mem.writeIntLittle(u32, member[0..4], int);
+            } else mem.writeInt(u32, member[0..4], int, .little);
         },
         .TYPE_FIXED32, .TYPE_SFIXED32, .TYPE_FLOAT => {
             if (wire_type != .I32) return error.FieldMissing;
-            const int = mem.readIntLittle(u32, scanned_member.data[0..4]);
+            const int = mem.readInt(u32, scanned_member.data[0..4], .little);
             log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(u32), int);
-            } else mem.writeIntLittle(u32, member[0..4], int);
+            } else mem.writeInt(u32, member[0..4], int, .little);
         },
         .TYPE_FIXED64, .TYPE_SFIXED64, .TYPE_DOUBLE => {
             if (wire_type != .I64) return error.FieldMissing;
-            const int = mem.readIntLittle(u64, scanned_member.data[0..8]);
+            const int = mem.readInt(u64, scanned_member.data[0..8], .little);
             log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(u64), int);
-            } else mem.writeIntLittle(u64, member[0..8], int);
+            } else mem.writeInt(u64, member[0..8], int, .little);
         },
         .TYPE_INT64, .TYPE_UINT64 => {
             if (wire_type != .VARINT) return error.FieldMissing;
@@ -550,7 +550,7 @@ fn parseRequiredMember(
             log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(u64), int);
-            } else mem.writeIntLittle(u64, member[0..8], int);
+            } else mem.writeInt(u64, member[0..8], int, .little);
         },
         .TYPE_SINT64 => {
             if (wire_type != .VARINT) return error.FieldMissing;
@@ -558,7 +558,7 @@ fn parseRequiredMember(
             log.info("{s}: {}", .{ field.name, int });
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(u64), int);
-            } else mem.writeIntLittle(u64, member[0..8], int);
+            } else mem.writeInt(u64, member[0..8], int, .little);
         },
         .TYPE_BOOL => {
             if (wire_type != .VARINT) return error.FieldMissing;
@@ -1003,28 +1003,28 @@ fn serializeRepeatedPacked(
     while (i < list.len) : (i += 1) {
         switch (field.type) {
             .TYPE_INT32, .TYPE_UINT32, .TYPE_ENUM, .TYPE_BOOL => {
-                const int = mem.readIntLittle(u32, (list.items + i * size)[0..4]);
+                const int = mem.readInt(u32, (list.items + i * size)[0..4], .little);
                 try writeVarint128(u32, int, writer, .int);
             },
             .TYPE_SINT32 => {
-                const int = mem.readIntLittle(u32, (list.items + i * size)[0..4]);
+                const int = mem.readInt(u32, (list.items + i * size)[0..4], .little);
                 try writeVarint128(u32, int, writer, .sint);
             },
             .TYPE_SINT64 => {
-                const int = mem.readIntLittle(u64, (list.items + i * size)[0..8]);
+                const int = mem.readInt(u64, (list.items + i * size)[0..8], .little);
                 try writeVarint128(u64, int, writer, .sint);
             },
             .TYPE_INT64, .TYPE_UINT64 => {
-                const int = mem.readIntLittle(u64, (list.items + i * size)[0..8]);
+                const int = mem.readInt(u64, (list.items + i * size)[0..8], .little);
                 try writeVarint128(u64, int, writer, .int);
             },
             .TYPE_FIXED32, .TYPE_FLOAT, .TYPE_SFIXED32 => {
-                const int = mem.readIntLittle(u32, (list.items + i * size)[0..4]);
-                try writer.writeIntLittle(u32, int);
+                const int = mem.readInt(u32, (list.items + i * size)[0..4], .little);
+                try writer.writeInt(u32, int, .little);
             },
             .TYPE_FIXED64, .TYPE_DOUBLE, .TYPE_SFIXED64 => {
-                const int = mem.readIntLittle(u64, (list.items + i * size)[0..8]);
-                try writer.writeIntLittle(u64, int);
+                const int = mem.readInt(u64, (list.items + i * size)[0..8], .little);
+                try writer.writeInt(u64, int, .little);
             },
 
             .TYPE_STRING,
@@ -1115,25 +1115,25 @@ fn serializeRequiredField(
         .TYPE_ENUM, .TYPE_INT32, .TYPE_UINT32 => {
             const tag = Tag.init(.VARINT, field.id);
             try writeVarint128(usize, tag.encode(), writer, .int);
-            const value = mem.readIntLittle(u32, member[0..4]);
+            const value = mem.readInt(u32, member[0..4], .little);
             try writeVarint128(u32, value, writer, .int);
         },
         .TYPE_SINT32 => {
             const tag = Tag.init(.VARINT, field.id);
             try writeVarint128(usize, tag.encode(), writer, .int);
-            const value = mem.readIntLittle(i32, member[0..4]);
+            const value = mem.readInt(i32, member[0..4], .little);
             try writeVarint128(i32, value, writer, .sint);
         },
         .TYPE_SINT64 => {
             const tag = Tag.init(.VARINT, field.id);
             try writeVarint128(usize, tag.encode(), writer, .int);
-            const value = mem.readIntLittle(i64, member[0..8]);
+            const value = mem.readInt(i64, member[0..8], .little);
             try writeVarint128(i64, value, writer, .sint);
         },
         .TYPE_UINT64, .TYPE_INT64 => {
             const tag = Tag.init(.VARINT, field.id);
             try writeVarint128(usize, tag.encode(), writer, .int);
-            const value = mem.readIntLittle(u64, member[0..8]);
+            const value = mem.readInt(u64, member[0..8], .little);
             try writeVarint128(u64, value, writer, .int);
         },
         .TYPE_BOOL => {
@@ -1144,14 +1144,14 @@ fn serializeRequiredField(
         .TYPE_DOUBLE, .TYPE_FIXED64, .TYPE_SFIXED64 => {
             const tag = Tag.init(.I64, field.id);
             try writeVarint128(usize, tag.encode(), writer, .int);
-            const value = mem.readIntLittle(u64, member[0..8]);
-            try writer.writeIntLittle(u64, value);
+            const value = mem.readInt(u64, member[0..8], .little);
+            try writer.writeInt(u64, value, .little);
         },
         .TYPE_FLOAT, .TYPE_FIXED32, .TYPE_SFIXED32 => {
             const tag = Tag.init(.I32, field.id);
             try writeVarint128(usize, tag.encode(), writer, .int);
-            const value = mem.readIntLittle(u32, member[0..4]);
-            try writer.writeIntLittle(u32, value);
+            const value = mem.readInt(u32, member[0..4], .little);
+            try writer.writeInt(u32, value, .little);
         },
         .TYPE_MESSAGE => {
             var cwriter = std.io.countingWriter(std.io.null_writer);

@@ -58,7 +58,7 @@ fn serializeFieldImpl(
     } else {
         try writer.print(
             "{}",
-            .{mem.readIntLittle(T, info.member[0..@sizeOf(T)])},
+            .{mem.readInt(T, info.member[0..@sizeOf(T)], .little)},
         );
     }
 }
@@ -285,7 +285,7 @@ fn serializeField(
                     try writer.print("\"{s}\"", .{tagname});
                 }
             } else {
-                const int = mem.readIntLittle(i32, member[0..4]);
+                const int = mem.readInt(i32, member[0..4], .little);
                 const tagname = try enumTagname(enumdesc, int);
                 try writer.print("\"{s}\"", .{tagname});
             }
@@ -305,7 +305,7 @@ fn serializeField(
                 try serializeFloat(float, writer);
             }
         } else try serializeFloat(
-            @as(f32, @bitCast(mem.readIntLittle(u32, member[0..4]))),
+            @as(f32, @bitCast(mem.readInt(u32, member[0..4], .little))),
             writer,
         ),
         .TYPE_DOUBLE => if (child_info.is_repeated) {
@@ -316,7 +316,7 @@ fn serializeField(
                 try serializeFloat(d, writer);
             }
         } else try serializeFloat(
-            @as(f64, @bitCast(mem.readIntLittle(u64, member[0..8]))),
+            @as(f64, @bitCast(mem.readInt(u64, member[0..8], .little))),
             writer,
         ),
         .TYPE_STRING => if (child_info.is_repeated) {
