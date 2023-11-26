@@ -32,7 +32,7 @@ fn InitBytes(comptime T: type) MessageInit {
     return struct {
         pub fn initBytes(bytes: [*]u8, len: usize) void {
             assert(len == @sizeOf(T));
-            var ptr = ptrAlignCast(*T, bytes);
+            const ptr = ptrAlignCast(*T, bytes);
             ptr.* = T.init();
         }
     }.initBytes;
@@ -784,7 +784,7 @@ pub const Message = extern struct {
                 } else {
                     const size = pb.protobuf.repeatedEleSize(field.type);
                     const L = ListMutScalar(u8);
-                    var list = ptrAlignCast(*L, bytes + field.offset);
+                    const list = ptrAlignCast(*L, bytes + field.offset);
                     if (list.len != 0) {
                         log.debug(
                             "deinit {s}.{s} repeated field {s} len {} size {} bytelen {}",
@@ -833,7 +833,7 @@ pub const Message = extern struct {
                         "deinit {s}.{s} single message field",
                         .{ desc.name, field.name },
                     );
-                    var subm = ptrAlignCast(**Message, bytes + field.offset);
+                    const subm = ptrAlignCast(**Message, bytes + field.offset);
                     deinitImpl(subm.*, allocator, .only_pointer_fields);
                     const subbytes = @as([*]align(@alignOf(*Message)) u8, @ptrCast(subm.*));
                     const subdesc = subm.*.descriptor orelse

@@ -461,7 +461,7 @@ fn parseRepeatedMember(
     message: *Message,
     ctx: *Ctx,
 ) !void {
-    var field = scanned_member.field orelse unreachable;
+    const field = scanned_member.field orelse unreachable;
     log.debug(
         "parseRepeatedMember() field name='{s}' offset=0x{x}/{}",
         .{ field.name, field.offset, field.offset },
@@ -575,7 +575,7 @@ fn parseRequiredMember(
             if (field.label == .LABEL_REPEATED) {
                 listAppend(member, ListMut(String), String.init(bytes));
             } else {
-                var s = ptrAlignCast(*String, member);
+                const s = ptrAlignCast(*String, member);
                 s.* = String.init(bytes);
             }
             log.info("{s}: '{s}'", .{ field.name, bytes });
@@ -662,7 +662,7 @@ fn parseMember(
         "parseMember() '{s}' .{s} .{s} ",
         .{ field.name, @tagName(field.label), @tagName(field.type) },
     );
-    var member = @as([*]u8, @ptrCast(message)) + field.offset;
+    const member = @as([*]u8, @ptrCast(message)) + field.offset;
     return switch (field.label) {
         .LABEL_REQUIRED => parseRequiredMember(scanned_member, member, message, ctx, true),
         .LABEL_OPTIONAL, .LABEL_NONE => if (flagsContain(field.flags, FieldFlag.FLAG_ONEOF))
@@ -705,7 +705,7 @@ fn deserializeErr(comptime fmt: []const u8, args: anytype, err: Error) Error {
 /// create a new Message and deserialize a protobuf wire format message from
 /// ctx.data into its fields. uses ctx.allocator for allocations.
 pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
-    var buf = try ctx.allocator.alignedAlloc(
+    const buf = try ctx.allocator.alignedAlloc(
         u8,
         common.ptrAlign(*Message),
         desc.sizeof_message,
@@ -900,7 +900,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                     .{ field.name, size * list.len, size, list.len },
                 );
                 // TODO CLEAR_REMAINING_N_PTRS?
-                var bytes = switch (field.type) {
+                const bytes = switch (field.type) {
                     .TYPE_DOUBLE,
                     .TYPE_INT64,
                     .TYPE_UINT64,

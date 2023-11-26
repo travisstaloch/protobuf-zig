@@ -38,7 +38,7 @@ pub fn deserializeBytesHelper(comptime T: type, bytes: []const u8, alloc: mem.Al
     return try message.as(T);
 }
 pub fn deserializeHexBytesHelper(comptime T: type, hexbytes: []const u8, alloc: mem.Allocator) !*T {
-    var out = try alloc.alloc(u8, hexbytes.len / 2);
+    const out = try alloc.alloc(u8, hexbytes.len / 2);
     defer alloc.free(out);
     const bytes = try std.fmt.hexToBytes(out, hexbytes);
     return deserializeBytesHelper(T, bytes, alloc);
