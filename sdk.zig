@@ -98,7 +98,7 @@ pub const GenStep = struct {
             const name = source.path[startidx..endidx];
             // remove illegal characters to make a zig identifier
             var buf: [256]u8 = undefined;
-            std.mem.copy(u8, &buf, name);
+            @memcpy(buf[0..name.len], name);
             if (!std.ascii.isAlphabetic(name[0]) and name[0] != '_') {
                 std.log.err(
                     "invalid identifier '{s}'. filename must start with alphabetic or underscore",
