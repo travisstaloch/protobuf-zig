@@ -2,7 +2,7 @@ const std = @import("std");
 const GenFormat = @import("src/common.zig").GenFormat;
 const sdk = @import("sdk.zig");
 
-pub fn build(b: *std.build.Builder) !void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -28,9 +28,9 @@ pub fn build(b: *std.build.Builder) !void {
     ) orelse "";
 
     const protobuf_mod = b.addModule("protobuf-zig", .{
-        .source_file = .{ .path = "src/lib.zig" },
+        .root_source_file = .{ .path = "src/lib.zig" },
     });
-    try protobuf_mod.dependencies.put("protobuf", protobuf_mod);
+    try protobuf_mod.import_table.put(b.allocator, "protobuf", protobuf_mod);
 
     const build_options = b.addOptions();
     build_options.addOption(std.log.Level, "log_level", log_level);
@@ -45,7 +45,7 @@ pub fn build(b: *std.build.Builder) !void {
         .optimize = optimize,
     });
     b.installArtifact(protoc_echo);
-    protoc_echo.addOptions("build_options", build_options);
+    protoc_echo.root_module.addOptions("build_options", build_options);
 
     const protoc_gen_zig = b.addExecutable(.{
         .name = "protoc-gen-zig",
@@ -54,8 +54,8 @@ pub fn build(b: *std.build.Builder) !void {
         .optimize = optimize,
     });
     b.installArtifact(protoc_gen_zig);
-    protoc_gen_zig.addOptions("build_options", build_options);
-    protoc_gen_zig.addModule("protobuf", protobuf_mod);
+    protoc_gen_zig.root_module.addOptions("build_options", build_options);
+    protoc_gen_zig.root_module.addImport("protobuf", protobuf_mod);
 
     const run_protoc_cmd = b.addSystemCommand(&.{
         "protoc",
@@ -90,10 +90,10 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    main_tests.addModule("protobuf", protobuf_mod);
-    main_tests.addAnonymousModule("generated", .{
-        .source_file = gen_step.module.source_file,
-        .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
+    main_tests.root_module.addImport("protobuf", protobuf_mod);
+    main_tests.root_module.addAnonymousImport("generated", .{
+        .root_source_file = gen_step.module.root_source_file,
+        .imports = &.{.{ .name = "protobuf", .module = protobuf_mod }},
     });
     main_tests.step.dependOn(b.getInstallStep());
     main_tests.step.dependOn(&gen_step.step);
@@ -108,11 +108,11 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    conformance_exe.addOptions("build_options", build_options);
-    conformance_exe.addModule("protobuf", protobuf_mod);
-    conformance_exe.addAnonymousModule("generated", .{
-        .source_file = gen_step.module.source_file,
-        .dependencies = &.{.{ .name = "protobuf", .module = protobuf_mod }},
+    conformance_exe.root_module.addOptions("build_options", build_options);
+    conformance_exe.root_module.addImport("protobuf", protobuf_mod);
+    conformance_exe.root_module.addAnonymousImport("generated", .{
+        .root_source_file = gen_step.module.root_source_file,
+        .imports = &.{.{ .name = "protobuf", .module = protobuf_mod }},
     });
     conformance_exe.step.dependOn(&gen_step.step);
     b.installArtifact(conformance_exe);

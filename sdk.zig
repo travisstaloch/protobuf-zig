@@ -4,18 +4,18 @@ pub const plugin_arg = "--plugin=zig-out/bin/protoc-gen-zig" ++
     (if (@import("builtin").target.os.tag == .windows) ".exe" else "");
 
 pub const GenStep = struct {
-    step: std.build.Step,
-    b: *std.build.Builder,
-    sources: std.ArrayListUnmanaged(std.build.FileSource) = .{},
+    step: std.Build.Step,
+    b: *std.Build,
+    sources: std.ArrayListUnmanaged(std.Build.GeneratedFile) = .{},
     cache_path: []const u8,
-    lib_file: std.build.GeneratedFile,
+    lib_file: std.Build.GeneratedFile,
     module: *std.Build.Module,
 
     /// init a GenStep, create zig-cache/protobuf-zig if not exists, setup
     /// dependencies, and setup args to exe.run()
     pub fn create(
-        b: *std.build.Builder,
-        exe: *std.build.LibExeObjStep,
+        b: *std.Build,
+        exe: *std.Build.Step.Compile,
         files: []const []const u8,
     ) !*GenStep {
         const self = b.allocator.create(GenStep) catch unreachable;
@@ -33,7 +33,7 @@ pub const GenStep = struct {
             &.{ cache_path, "lib.zig" },
         );
         self.* = GenStep{
-            .step = std.build.Step.init(.{
+            .step = std.Build.Step.init(.{
                 .id = .custom,
                 .name = "build-template",
                 .owner = b,
@@ -46,14 +46,13 @@ pub const GenStep = struct {
                 .path = lib_path,
             },
             .module = b.createModule(.{
-                .source_file = .{ .path = lib_path },
+                .root_source_file = .{ .path = lib_path },
             }),
         };
 
         for (files) |file| {
             const source = try self.sources.addOne(b.allocator);
-            source.* = .{ .path = file };
-            source.addStepDependencies(&self.step);
+            source.* = .{ .path = file, .step = &self.step };
         }
 
         const run_cmd = b.addSystemCommand(&.{
@@ -75,7 +74,7 @@ pub const GenStep = struct {
 
     /// creates a 'lib.zig' file at self.lib_file.path which exports all
     /// generated .pb.zig files
-    fn make(step: *std.build.Step, prog_node: *std.Progress.Node) anyerror!void {
+    fn make(step: *std.Build.Step, prog_node: *std.Progress.Node) anyerror!void {
         _ = prog_node;
         const self = @fieldParentPtr(GenStep, "step", step);
 
@@ -83,19 +82,19 @@ pub const GenStep = struct {
         defer file.close();
         const writer = file.writer();
         for (self.sources.items) |source| {
-            const endidx = std.mem.lastIndexOf(u8, source.path, ".proto") orelse {
+            const endidx = std.mem.lastIndexOf(u8, source.path.?, ".proto") orelse {
                 std.log.err(
                     "invalid path '{s}'. expected to end with '.proto'",
-                    .{source.path},
+                    .{source.path.?},
                 );
                 return error.InvalidPath;
             };
             const startidx = if (std.mem.lastIndexOfScalar(
                 u8,
-                source.path[0..endidx],
+                source.path.?[0..endidx],
                 '/',
             )) |i| i + 1 else 0;
-            const name = source.path[startidx..endidx];
+            const name = source.path.?[startidx..endidx];
             // remove illegal characters to make a zig identifier
             var buf: [256]u8 = undefined;
             @memcpy(buf[0..name.len], name);
@@ -109,10 +108,10 @@ pub const GenStep = struct {
             for (name[1..], 0..) |c, i| {
                 if (!std.ascii.isAlphanumeric(c)) buf[i + 1] = '_';
             }
-            const path = if (std.mem.startsWith(u8, source.path, "examples/"))
-                source.path[0..endidx]["examples/".len..]
+            const path = if (std.mem.startsWith(u8, source.path.?, "examples/"))
+                source.path.?[0..endidx]["examples/".len..]
             else
-                source.path[0..endidx];
+                source.path.?[0..endidx];
             try writer.print(
                 \\pub const {s} = @import("{s}.pb.zig");
                 \\
