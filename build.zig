@@ -97,7 +97,10 @@ pub fn build(b: *std.Build) !void {
     });
     main_tests.step.dependOn(b.getInstallStep());
     main_tests.step.dependOn(&gen_step.step);
-    main_tests.filter = test_filter;
+    main_tests.filters = if (test_filter.len > 0)
+        try b.allocator.dupe([]const u8, &.{test_filter})
+    else
+        &.{};
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&b.addRunArtifact(main_tests).step);
