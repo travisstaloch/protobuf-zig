@@ -199,7 +199,8 @@ fn enumValuesByNumber(comptime T: type) []const EnumValue {
             .zig_name = String.init(@typeName(T) ++ "." ++ @tagName(tag)),
         };
     }
-    return &result;
+    const final = result;
+    return &final;
 }
 
 fn Format(comptime T: type) FormatFn(T) {
@@ -418,14 +419,16 @@ pub const MessageDescriptor = extern struct {
                 // TODO remove this hack whichjust works around dependency loop
                 // along with field.recursive_descriptor
                 var fields = result.fields.items[0..result.fields.len].*;
+                const final_result = result;
                 for (fields, 0..) |field, i| {
                     if (field.recursive_descriptor) {
                         var tmp = fields[i];
-                        tmp.descriptor = &result;
+                        tmp.descriptor = &final_result;
                         fields[i] = tmp;
                     }
                 }
-                result.fields = List(FieldDescriptor).init(&fields);
+                const final_fields = fields;
+                result.fields = List(FieldDescriptor).init(&final_fields);
             }
             const fields = result.fields;
             const field_ids = result.field_ids;

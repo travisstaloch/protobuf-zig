@@ -69,11 +69,18 @@ pub fn ListMut(comptime T: type) type {
     return ArrayListMut(T);
 }
 
+pub fn isContainer(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .Struct, .Union, .Opaque => true,
+        else => false,
+    };
+}
+
 /// helper for repeated scalar types.
 /// checks that T is a String non container type.
 /// returns ArrayList(T)
 pub fn ListMutScalar(comptime T: type) type {
-    assert(T == String or !std.meta.trait.isContainer(T));
+    assert(T == String or !isContainer(T));
     return ArrayListMut(T);
 }
 
@@ -181,7 +188,7 @@ pub fn ListMixins(comptime T: type, comptime Self: type, comptime Slice: type) t
                     l.cap = new_cap;
                 } else {
                     const new_items = try allocator.alignedAlloc(T, alignment, new_cap);
-                    std.mem.copy(T, new_items, l.slice());
+                    @memcpy(new_items[0..l.len], l.slice());
                     allocator.free(old_memory);
                     l.items = new_items.ptr;
                     l.cap = new_items.len;
