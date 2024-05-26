@@ -11,12 +11,16 @@ const String = pb.extern_types.String;
 /// 2. run the following
 ///    $ protoc --plugin protoc-gen-zig=zig-out/bin/protoc-echo-to-stderr --zig_out=gen `protofile`
 pub fn parseWithSystemProtoc(protofile: []const u8, alloc: mem.Allocator) ![]const u8 {
-    _ = try std.ChildProcess.run(.{ .allocator = alloc, .argv = &.{ "zig", "build" } });
+    {
+        const r = try std.ChildProcess.run(.{ .allocator = alloc, .argv = &.{ "zig", "build" } });
+        alloc.free(r.stderr);
+        alloc.free(r.stdout);
+    }
 
     const r = try std.ChildProcess.run(.{
         .allocator = alloc,
         .argv = &.{
-            "protoc",
+            "zig-out/bin/protoc",
             "--plugin",
             "protoc-gen-zig=zig-out/bin/protoc-echo-to-stderr",
             "--zig_out=gen",
@@ -73,9 +77,9 @@ pub fn encodeMessage(comptime parts: anytype) []const u8 {
                 encodeVarint(usize, @field(parts, f.name)),
             bool => result = result ++
                 encodeVarint(u8, @intFromBool(@field(parts, f.name))),
-            else => if (std.meta.trait.isZigString(f.type)) {
+            else => if (isZigString(f.type)) {
                 result = result ++ @field(parts, f.name);
-            } else if (std.meta.trait.isIntegral(f.type)) {
+            } else if (isIntegral(f.type)) {
                 result = result ++
                     encodeVarint(f.type, @field(parts, f.name));
             } else @compileError("unsupported type '" ++ @typeName(f.type) ++ "'"),
@@ -83,6 +87,37 @@ pub fn encodeMessage(comptime parts: anytype) []const u8 {
     };
 
     return result;
+}
+
+pub fn isZigString(comptime T: type) bool {
+    return comptime blk: {
+        // Only pointer types can be strings, no optionals
+        const info = @typeInfo(T);
+        if (info != .Pointer) break :blk false;
+        const ptr = &info.Pointer;
+        // Check for CV qualifiers that would prevent coerction to []const u8
+        if (ptr.is_volatile or ptr.is_allowzero) break :blk false;
+        // If it's already a slice, simple check.
+        if (ptr.size == .Slice) {
+            break :blk ptr.child == u8;
+        }
+        // Otherwise check if it's an array type that coerces to slice.
+        if (ptr.size == .One) {
+            const child = @typeInfo(ptr.child);
+            if (child == .Array) {
+                const arr = &child.Array;
+                break :blk arr.child == u8;
+            }
+        }
+        break :blk false;
+    };
+}
+
+pub fn isIntegral(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .Int, .ComptimeInt => true,
+        else => false,
+    };
 }
 
 pub fn lengthEncode(comptime parts: anytype) []const u8 {

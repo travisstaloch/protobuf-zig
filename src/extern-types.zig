@@ -173,7 +173,7 @@ pub fn ListMixins(comptime T: type, comptime Self: type, comptime Slice: type) t
             const new_len = old_len + items.len;
             assert(new_len <= l.cap);
             l.len = new_len;
-            mem.copy(T, l.items[old_len..new_len], items);
+            @memcpy(l.items[old_len..new_len], items);
         }
 
         pub fn ensureTotalCapacity(l: *Self, allocator: mem.Allocator, new_cap: usize) !void {

@@ -1,0 +1,32 @@
+.{
+    .name = "protobuf-zig",
+    .version = "0.0.0",
+
+    .minimum_zig_version = "0.13.0-dev.261+710d745a5",
+
+    .dependencies = .{
+        .protobuf_linux = .{
+            .url = "https://github.com/protocolbuffers/protobuf/releases/download/v27.0/protoc-27.0-linux-x86_64.zip",
+            .hash = "1220c4aa55042dac45ede1ac2dba768b90e82834f37ebe3e1220b8fa9898f332879d",
+            .lazy = true,
+        },
+        .protobuf_windows = .{
+            .url = "https://github.com/protocolbuffers/protobuf/releases/download/v27.0/protoc-27.0-win64.zip",
+            .hash = "1220c1b8a1524722abde7316c9ab37760d2823cbce8b52c1305769216cf59e4a92bc",
+            .lazy = true,
+        },
+        .protobuf_macos = .{
+            .url = "https://github.com/protocolbuffers/protobuf/releases/download/v27.0/protoc-27.0-osx-universal_binary.zip",
+            .hash = "12209cf887c16d2da7c6a8a7ab71223e66f2148097462cade9b83ee9697d1c3d5504",
+            .lazy = true,
+        },
+    },
+    .paths = .{
+        "",
+        //"build.zig",
+        //"build.zig.zon",
+        //"src",
+        //"LICENSE",
+        //"README.md",
+    },
+}

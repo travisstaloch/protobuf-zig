@@ -168,9 +168,8 @@ fn SetField(comptime T: type) fn (*T, comptime types.FieldEnum(T), anytype) void
     }.setField;
 }
 
-const WriteErr = std.fs.File.WriteError;
 pub fn FormatFn(comptime T: type) type {
-    return fn (T, comptime []const u8, std.fmt.FormatOptions, anytype) WriteErr!void;
+    return fn (T, comptime []const u8, std.fmt.FormatOptions, anytype) anyerror!void;
 }
 
 fn fieldIndicesByName(comptime field_descriptors: []const FieldDescriptor) []const c_uint {
@@ -205,14 +204,14 @@ fn enumValuesByNumber(comptime T: type) []const EnumValue {
 
 fn Format(comptime T: type) FormatFn(T) {
     return struct {
-        pub fn format(value: T, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) WriteErr!void {
+        pub fn format(value: T, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) anyerror!void {
             try value.base.formatMessage(writer);
         }
     }.format;
 }
 
 /// this must be kept in sync with constants created in MessageMixins()
-pub const reserved_words = std.ComptimeStringMap(void, .{
+pub const reserved_words = std.StaticStringMap(void).initComptime(.{
     .{ "init", {} },
     .{ "initBytes", {} },
     .{ "initFields", {} },
@@ -595,7 +594,7 @@ pub const Message = extern struct {
         return @as(*T, @ptrCast(m));
     }
 
-    pub fn formatMessage(message: *const Message, writer: anytype) WriteErr!void {
+    pub fn formatMessage(message: *const Message, writer: anytype) !void {
         const desc = message.descriptor orelse unreachable;
         try writer.print("{s}{{", .{desc.name});
         const fields = desc.fields;

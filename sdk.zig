@@ -15,14 +15,12 @@ pub const GenStep = struct {
     /// dependencies, and setup args to exe.run()
     pub fn create(
         b: *std.Build,
+        protoc_filename: []const u8,
         exe: *std.Build.Step.Compile,
         files: []const []const u8,
     ) !*GenStep {
         const self = b.allocator.create(GenStep) catch unreachable;
-        const cache_root = std.fs.path.resolve(
-            b.allocator,
-            &.{b.cache_root.path orelse "."},
-        ) catch @panic("OOM");
+        const cache_root = std.fs.path.basename(b.cache_root.path orelse ".");
         const protobuf_zig_path = "protobuf-zig";
         const cache_path = try std.fs.path.join(
             b.allocator,
@@ -45,9 +43,7 @@ pub const GenStep = struct {
                 .step = &self.step,
                 .path = lib_path,
             },
-            .module = b.createModule(.{
-                .root_source_file = .{ .path = lib_path },
-            }),
+            .module = b.createModule(.{ .root_source_file = b.path(lib_path) }),
         };
 
         for (files) |file| {
@@ -56,7 +52,7 @@ pub const GenStep = struct {
         }
 
         const run_cmd = b.addSystemCommand(&.{
-            "protoc",
+            b.getInstallPath(.bin, protoc_filename),
             plugin_arg,
             "--zig_out",
             cache_path,

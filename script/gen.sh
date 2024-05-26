@@ -3,6 +3,6 @@
 DEST_DIR=gen
 
 dir=${dir%/*}
-CMD="protoc --plugin=zig-out/bin/protoc-gen-zig --zig_out=$DEST_DIR $@"
+CMD="zig-out/bin/protoc --plugin=zig-out/bin/protoc-gen-zig --zig_out=$DEST_DIR $@"
 echo $CMD
 $($CMD)

@@ -280,9 +280,7 @@ pub fn genMessage(
                         error.NotImplemented,
                     );
                 // proto3: the default value is the first defined enum value, which must be 0.
-                _ = try zig_writer.write("@intToEnum(");
-                try writeZigFieldType(field, proto_file, ctx);
-                _ = try zig_writer.write(", 0)");
+                _ = try zig_writer.write("@enumFromInt(0)");
             },
             .TYPE_MESSAGE, .TYPE_GROUP => _ = try zig_writer.write("undefined"),
             else => _ = try zig_writer.write(scalarFieldZigDefault(field)),
@@ -460,9 +458,9 @@ pub fn genFieldDescriptors(
             \\
         , .{
             if (is_oneof)
-                "@enumToInt(FieldFlag.FLAG_ONEOF)"
+                "@intFromEnum(FieldFlag.FLAG_ONEOF)"
             else if (field.has(.options) and field.options.@"packed")
-                "@enumToInt(FieldFlag.FLAG_PACKED)"
+                "@intFromEnum(FieldFlag.FLAG_PACKED)"
             else
                 "0",
         });

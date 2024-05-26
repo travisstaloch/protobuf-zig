@@ -9,8 +9,8 @@ const Response = cf.ConformanceResponse;
 const pb = @import("protobuf");
 const String = pb.extern_types.String;
 
-pub const std_options = struct {
-    pub const log_level = std.meta.stringToEnum(std.log.Level, @tagName(@import("build_options").log_level)).?;
+pub const std_options = .{
+    .log_level = std.meta.stringToEnum(std.log.Level, @tagName(@import("build_options").log_level)).?,
 };
 
 pub fn main() !void {
@@ -118,8 +118,6 @@ fn runTest(allr: Allocator, request: *Request) !Response {
     // }
     if (std.mem.eql(u8, request.message_type.slice(), "conformance.FailureSet")) {
         var failure_set = cf.FailureSet.init();
-        var failures = std.ArrayList([]const u8).init(allr);
-        _ = failures;
         const all_failures: []const []const u8 = &.{
             // list of known failing tests to skip
             "Required.DurationProtoInputTooLarge.JsonOutput",

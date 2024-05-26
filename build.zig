@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) !void {
     ) orelse "";
 
     const protobuf_mod = b.addModule("protobuf-zig", .{
-        .root_source_file = .{ .path = "src/lib.zig" },
+        .root_source_file = b.path("src/lib.zig"),
     });
     try protobuf_mod.import_table.put(b.allocator, "protobuf", protobuf_mod);
 
@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) !void {
     // for capturing output of system installed protoc. just echoes out whatever protoc sends
     const protoc_echo = b.addExecutable(.{
         .name = "protoc-echo-to-stderr",
-        .root_source_file = .{ .path = "src/protoc-echo-to-stderr.zig" },
+        .root_source_file = b.path("src/protoc-echo-to-stderr.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -49,7 +49,7 @@ pub fn build(b: *std.Build) !void {
 
     const protoc_gen_zig = b.addExecutable(.{
         .name = "protoc-gen-zig",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -57,11 +57,19 @@ pub fn build(b: *std.Build) !void {
     protoc_gen_zig.root_module.addOptions("build_options", build_options);
     protoc_gen_zig.root_module.addImport("protobuf", protobuf_mod);
 
+    const dep = b.fmt("protobuf_{s}", .{@tagName(target.result.os.tag)});
+    const protoc_filename = if (target.result.os.tag == .windows) "protoc.exe" else "protoc";
+    const protobuf = b.lazyDependency(dep, .{}).?;
+    const protoc_path = protobuf.path(b.pathJoin(&.{ "bin", protoc_filename }));
+    const protoc_bin = b.addInstallBinFile(protoc_path, protoc_filename);
+    b.getInstallStep().dependOn(&protoc_bin.step);
+
     const run_protoc_cmd = b.addSystemCommand(&.{
-        "protoc",
+        b.getInstallPath(.bin, protoc_filename),
         sdk.plugin_arg,
         "--zig_out=gen",
     });
+
     run_protoc_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_protoc_cmd.addArgs(args);
 
@@ -69,7 +77,7 @@ pub fn build(b: *std.Build) !void {
     run_step.dependOn(&run_protoc_cmd.step);
 
     // generate files that need to be avaliable in tests
-    var gen_step = try sdk.GenStep.create(b, protoc_gen_zig, &.{
+    var gen_step = try sdk.GenStep.create(b, protoc_filename, protoc_gen_zig, &.{
         "examples/all_types.proto",
         "examples/only_enum.proto",
         "examples/person.proto",
@@ -86,7 +94,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     const main_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/tests.zig" },
+        .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -107,7 +115,7 @@ pub fn build(b: *std.Build) !void {
 
     const conformance_exe = b.addExecutable(.{
         .name = "conformance",
-        .root_source_file = .{ .path = "src/conformance.zig" },
+        .root_source_file = b.path("src/conformance.zig"),
         .target = target,
         .optimize = optimize,
     });
