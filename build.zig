@@ -59,10 +59,12 @@ pub fn build(b: *std.Build) !void {
 
     const dep = b.fmt("protobuf_{s}", .{@tagName(target.result.os.tag)});
     const protoc_filename = if (target.result.os.tag == .windows) "protoc.exe" else "protoc";
-    const protobuf = b.lazyDependency(dep, .{}).?;
-    const protoc_path = protobuf.path(b.pathJoin(&.{ "bin", protoc_filename }));
-    const protoc_bin = b.addInstallBinFile(protoc_path, protoc_filename);
-    b.getInstallStep().dependOn(&protoc_bin.step);
+    const mprotobuf = b.lazyDependency(dep, .{});
+    if (mprotobuf) |protobuf| {
+        const protoc_path = protobuf.path(b.pathJoin(&.{ "bin", protoc_filename }));
+        const protoc_bin = b.addInstallBinFile(protoc_path, protoc_filename);
+        b.getInstallStep().dependOn(&protoc_bin.step);
+    }
 
     const run_protoc_cmd = b.addSystemCommand(&.{
         b.getInstallPath(.bin, protoc_filename),
