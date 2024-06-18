@@ -183,7 +183,7 @@ pub fn writeSplitIdent(
     delim_replacement: []const u8,
 ) !void {
     const name = mem.trimLeft(u8, ident.slice(), delim);
-    var spliter = mem.split(u8, name, delim);
+    var spliter = mem.splitSequence(u8, name, delim);
     var i: u16 = 0;
     while (spliter.next()) |namepart| : (i += 1) {
         if (i != 0) _ = try writer.write(delim_replacement);

@@ -86,7 +86,7 @@ fn writeZigFieldTypeName(
     // remove leading shared package names
     assert(field_typename.len > 0 and field_typename[0] == '.');
     var i: usize = 0;
-    var spliter = mem.split(u8, parent_proto.package.slice(), ".");
+    var spliter = mem.splitScalar(u8, parent_proto.package.slice(), '.');
     {
         const field_typename_ = field_typename[1..];
         while (spliter.next()) |part| {
