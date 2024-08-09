@@ -70,8 +70,7 @@ pub const GenStep = struct {
 
     /// creates a 'lib.zig' file at self.lib_file.path which exports all
     /// generated .pb.zig files
-    fn make(step: *std.Build.Step, prog_node: std.Progress.Node) anyerror!void {
-        _ = prog_node;
+    fn make(step: *std.Build.Step, _: std.Build.Step.MakeOptions) anyerror!void {
         const self: *GenStep = @fieldParentPtr("step", step);
 
         var file = try std.fs.cwd().createFile(self.lib_file.path.?, .{});
