@@ -132,7 +132,7 @@ pub const TestError = error{
 };
 
 pub fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
-    @setEvalBranchQuota(4000);
+    @setEvalBranchQuota(20000);
     switch (@typeInfo(T)) {
         .Int, .Bool, .Enum => try std.testing.expectEqual(data, data2),
         .Float => try std.testing.expectApproxEqAbs(
