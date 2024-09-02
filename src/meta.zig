@@ -30,7 +30,7 @@ pub fn FieldEnum(comptime T: type) type {
         const fieldinfo = @typeInfo(field.type);
         // if (isStringIn(field.name, exclude_fields)) continue;
         switch (fieldinfo) {
-            .Union => inline for (fieldinfo.Union.fields) |ufield| {
+            .@"union" => inline for (fieldinfo.@"union".fields) |ufield| {
                 fs = fs ++ [1]EnumField{.{
                     .name = field.name ++ "__" ++ ufield.name,
                     .value = fs.len,
@@ -42,7 +42,7 @@ pub fn FieldEnum(comptime T: type) type {
             }},
         }
     }
-    return @Type(.{ .Enum = .{
+    return @Type(.{ .@"enum" = .{
         .tag_type = std.math.IntFittingRange(0, fs.len -| 1),
         .fields = fs,
         .decls = &.{},
@@ -51,17 +51,17 @@ pub fn FieldEnum(comptime T: type) type {
 }
 
 pub fn fields(comptime T: type) switch (@typeInfo(T)) {
-    .Struct => []const Field,
+    .@"struct" => []const Field,
     else => @compileError("Expected struct, union, error set or enum type, found '" ++ @typeName(T) ++ "'"),
 } {
-    if (@typeInfo(T) != .Struct)
+    if (@typeInfo(T) != .@"struct")
         @compileError("Expected struct type, found '" ++ @typeName(T) ++ "'");
 
     var fs: []const Field = &.{};
     inline for (std.meta.fields(T)) |field| {
         const fieldinfo = @typeInfo(field.type);
         switch (fieldinfo) {
-            .Union => inline for (fieldinfo.Union.fields) |ufield| {
+            .@"union" => inline for (fieldinfo.@"union".fields) |ufield| {
                 var uf = ufield;
                 uf.name = field.name ++ "__" ++ ufield.name;
                 fs = fs ++ [1]Field{.{ .union_field = uf }};
@@ -74,10 +74,10 @@ pub fn fields(comptime T: type) switch (@typeInfo(T)) {
 
 /// copy of std.meta.fieldInfo
 pub fn fieldInfo(comptime T: type, comptime field: FieldEnum(T)) switch (@typeInfo(T)) {
-    .Struct => Field,
-    // .Union => std.builtin.Type.UnionField,
+    .@"struct" => Field,
+    // .@"union" => std.builtin.Type.UnionField,
     // .ErrorSet => std.builtin.Type.Error,
-    // .Enum => std.builtin.Type.EnumField,
+    // .@"enum" => std.builtin.Type.EnumField,
     else => @compileError("Expected struct, union, error set or enum type, found '" ++ @typeName(T) ++ "'"),
 } {
     return fields(T)[@intFromEnum(field)];
@@ -95,7 +95,7 @@ pub fn fieldIndex(comptime T: type, comptime name: []const u8) ?comptime_int {
 /// copy of std.meta.FieldType but adapted to work with union field tagnames of
 /// the form `union_field__tagname`
 pub fn FieldType(comptime T: type, comptime field: FieldEnum(T)) type {
-    if (@typeInfo(T) != .Struct and @typeInfo(T) != .Union) {
+    if (@typeInfo(T) != .@"struct" and @typeInfo(T) != .@"union") {
         @compileError("Expected struct or union, found '" ++ @typeName(T) ++ "'");
     }
 

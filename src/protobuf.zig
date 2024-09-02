@@ -67,7 +67,7 @@ pub fn readVarint128(comptime T: type, reader: anytype, comptime mode: IntMode) 
         const v = @as(U, @truncate(value));
         return (v >> 1) ^ @as(U, @bitCast(-@as(S, @bitCast(v & 1))));
     }
-    return switch (@typeInfo(T).Int.signedness) {
+    return switch (@typeInfo(T).int.signedness) {
         .signed => @as(T, @truncate(@as(i128, @bitCast(value)))),
         .unsigned => @as(T, @truncate(value)),
     };

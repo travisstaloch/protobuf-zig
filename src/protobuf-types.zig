@@ -53,7 +53,7 @@ fn InitFields(comptime T: type) fn (anytype) T {
     return struct {
         pub fn initFields(fields: anytype) T {
             var result = T.init();
-            inline for (@typeInfo(@TypeOf(fields)).Struct.fields) |field| {
+            inline for (@typeInfo(@TypeOf(fields)).@"struct".fields) |field| {
                 result.set(@field(types.FieldEnum(T), field.name), @field(fields, field.name));
             }
             return result;
@@ -102,12 +102,12 @@ fn ActiveTag(comptime T: type) fn (T, comptime std.meta.FieldEnum(T)) ?types.Fie
             const field_info = comptime std.meta.fieldInfo(T, field_enum);
             const field_tinfo = @typeInfo(field_info.type);
 
-            if (field_tinfo != .Union)
+            if (field_tinfo != .@"union")
                 compileErr(
                     "activeTag() expects a union field tag but '.{s}' is a '.{s}",
                     .{ utagname, @tagName(field_tinfo) },
                 );
-            inline for (field_tinfo.Union.fields) |ufield| {
+            inline for (field_tinfo.@"union".fields) |ufield| {
                 const fe = comptime std.meta.stringToEnum(
                     types.FieldEnum(T),
                     utagname ++ "__" ++ ufield.name,
@@ -444,7 +444,7 @@ pub const MessageDescriptor = extern struct {
             for (fields.slice()) |field|
                 n_oneof_fields +=
                     @intFromBool(flagsContain(field.flags, FieldFlag.FLAG_ONEOF));
-            const len = @typeInfo(T).Struct.fields.len;
+            const len = @typeInfo(T).@"struct".fields.len;
             const actual_len = fields.len + 1 -
                 (n_oneof_fields -| oneof_field_ids.len);
             if (actual_len != len) compileErr(

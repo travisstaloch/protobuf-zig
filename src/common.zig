@@ -21,7 +21,7 @@ else
 pub const GenFormat = enum { zig, c };
 pub const panicf = std.debug.panic;
 pub fn ptrAlign(comptime Ptr: type) comptime_int {
-    return @typeInfo(Ptr).Pointer.alignment;
+    return @typeInfo(Ptr).pointer.alignment;
 }
 
 pub fn ptrAlignCast(comptime Ptr: type, ptr: anytype) Ptr {

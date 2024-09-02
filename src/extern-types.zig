@@ -61,17 +61,17 @@ pub const String = extern struct {
 /// returns types.ArrayListMut(T)
 pub fn ListMut(comptime T: type) type {
     const tinfo = @typeInfo(T);
-    assert(tinfo == .Pointer);
-    const Child = tinfo.Pointer.child;
+    assert(tinfo == .pointer);
+    const Child = tinfo.pointer.child;
     const cinfo = @typeInfo(Child);
-    assert(cinfo == .Struct);
+    assert(cinfo == .@"struct");
     assert(Child != String);
     return ArrayListMut(T);
 }
 
 pub fn isContainer(comptime T: type) bool {
     return switch (@typeInfo(T)) {
-        .Struct, .Union, .Opaque => true,
+        .@"struct", .@"union", .@"opaque" => true,
         else => false,
     };
 }

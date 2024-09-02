@@ -63,7 +63,7 @@ pub fn encodeInt(comptime T: type, i: T) []const u8 {
 }
 
 pub fn encodeFloat(comptime T: type, i: T) []const u8 {
-    const U = std.meta.Int(.unsigned, @typeInfo(T).Float.bits);
+    const U = std.meta.Int(.unsigned, @typeInfo(T).float.bits);
     return encodeInt(U, @as(U, @bitCast(i)));
 }
 
@@ -93,8 +93,8 @@ pub fn isZigString(comptime T: type) bool {
     return comptime blk: {
         // Only pointer types can be strings, no optionals
         const info = @typeInfo(T);
-        if (info != .Pointer) break :blk false;
-        const ptr = &info.Pointer;
+        if (info != .pointer) break :blk false;
+        const ptr = &info.pointer;
         // Check for CV qualifiers that would prevent coerction to []const u8
         if (ptr.is_volatile or ptr.is_allowzero) break :blk false;
         // If it's already a slice, simple check.
@@ -104,8 +104,8 @@ pub fn isZigString(comptime T: type) bool {
         // Otherwise check if it's an array type that coerces to slice.
         if (ptr.size == .One) {
             const child = @typeInfo(ptr.child);
-            if (child == .Array) {
-                const arr = &child.Array;
+            if (child == .array) {
+                const arr = &child.array;
                 break :blk arr.child == u8;
             }
         }
@@ -115,7 +115,7 @@ pub fn isZigString(comptime T: type) bool {
 
 pub fn isIntegral(comptime T: type) bool {
     return switch (@typeInfo(T)) {
-        .Int, .ComptimeInt => true,
+        .int, .comptime_int => true,
         else => false,
     };
 }
@@ -134,13 +134,13 @@ pub const TestError = error{
 pub fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
     @setEvalBranchQuota(20000);
     switch (@typeInfo(T)) {
-        .Int, .Bool, .Enum => try std.testing.expectEqual(data, data2),
-        .Float => try std.testing.expectApproxEqAbs(
+        .int, .bool, .@"enum" => try std.testing.expectEqual(data, data2),
+        .float => try std.testing.expectApproxEqAbs(
             data,
             data2,
             std.math.floatEps(T),
         ),
-        .Struct => if (T == String) {
+        .@"struct" => if (T == String) {
             try std.testing.expectEqualStrings(data.slice(), data2.slice());
         } else if (comptime mem.indexOf(
             u8,
@@ -163,7 +163,7 @@ pub fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
                     const finfo = @typeInfo(F);
                     const field = types.getFieldHelp(T, data, tag);
                     const field2 = types.getFieldHelp(T, data2, tag);
-                    if (finfo == .Union) { // oneof fields
+                    if (finfo == .@"union") { // oneof fields
                         const ffe = comptime types.FieldEnum(F);
                         const ftags = comptime std.meta.tags(ffe);
                         inline for (T.oneof_field_ids) |oneof_ids| {
@@ -183,7 +183,7 @@ pub fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
                 }
             }
         },
-        .Pointer => |ptr| switch (ptr.size) {
+        .pointer => |ptr| switch (ptr.size) {
             .One => return expectEqual(ptr.child, data.*, data2.*),
             else => @compileError("unsupported type '" ++ @typeName(T) ++ "'"),
         },
@@ -200,11 +200,11 @@ pub fn testInit(
 ) mem.Allocator.Error!T {
     @setEvalBranchQuota(10_000);
     switch (@typeInfo(T)) {
-        .Int => return @as(T, @intCast(field_id.?)),
-        .Bool => return true,
-        .Enum => return std.meta.tags(T)[0],
-        .Float => return @as(T, @floatFromInt(field_id.?)),
-        .Struct => if (T == String) {
+        .int => return @as(T, @intCast(field_id.?)),
+        .bool => return true,
+        .@"enum" => return std.meta.tags(T)[0],
+        .float => return @as(T, @floatFromInt(field_id.?)),
+        .@"struct" => if (T == String) {
             return String.init(try std.fmt.allocPrint(alloc, "{}", .{field_id.?}));
         } else if (comptime mem.indexOf(
             u8,
@@ -243,7 +243,7 @@ pub fn testInit(
             }
             return t;
         },
-        .Pointer => |ptr| switch (ptr.size) {
+        .pointer => |ptr| switch (ptr.size) {
             .One => {
                 const t = try alloc.create(ptr.child);
                 t.* = try testInit(ptr.child, field_id, alloc);
@@ -251,7 +251,7 @@ pub fn testInit(
             },
             else => @compileError("unsupported type '" ++ @typeName(T) ++ "'"),
         },
-        .Union => {
+        .@"union" => {
             unreachable;
         },
         else => @compileError("unsupported type '" ++ @typeName(T) ++ "'"),
