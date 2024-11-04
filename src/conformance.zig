@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+
 const generated = @import("generated");
 const cf = generated.conformance;
 const test3 = generated.test_messages_proto3;
@@ -9,7 +10,7 @@ const Response = cf.ConformanceResponse;
 const pb = @import("protobuf");
 const String = pb.extern_types.String;
 
-pub const std_options = .{
+pub const std_options = std.Options{
     .log_level = std.meta.stringToEnum(std.log.Level, @tagName(@import("build_options").log_level)).?,
 };
 
