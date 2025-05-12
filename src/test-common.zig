@@ -98,11 +98,11 @@ pub fn isZigString(comptime T: type) bool {
         // Check for CV qualifiers that would prevent coerction to []const u8
         if (ptr.is_volatile or ptr.is_allowzero) break :blk false;
         // If it's already a slice, simple check.
-        if (ptr.size == .Slice) {
+        if (ptr.size == .slice) {
             break :blk ptr.child == u8;
         }
         // Otherwise check if it's an array type that coerces to slice.
-        if (ptr.size == .One) {
+        if (ptr.size == .one) {
             const child = @typeInfo(ptr.child);
             if (child == .array) {
                 const arr = &child.array;
@@ -132,7 +132,7 @@ pub const TestError = error{
 };
 
 pub fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
-    @setEvalBranchQuota(20000);
+    @setEvalBranchQuota(200000);
     switch (@typeInfo(T)) {
         .int, .bool, .@"enum" => try std.testing.expectEqual(data, data2),
         .float => try std.testing.expectApproxEqAbs(
@@ -184,7 +184,7 @@ pub fn expectEqual(comptime T: type, data: T, data2: T) TestError!void {
             }
         },
         .pointer => |ptr| switch (ptr.size) {
-            .One => return expectEqual(ptr.child, data.*, data2.*),
+            .one => return expectEqual(ptr.child, data.*, data2.*),
             else => @compileError("unsupported type '" ++ @typeName(T) ++ "'"),
         },
         else => @compileError("unsupported type '" ++ @typeName(T) ++ "'"),
@@ -244,7 +244,7 @@ pub fn testInit(
             return t;
         },
         .pointer => |ptr| switch (ptr.size) {
-            .One => {
+            .one => {
                 const t = try alloc.create(ptr.child);
                 t.* = try testInit(ptr.child, field_id, alloc);
                 return t;

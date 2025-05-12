@@ -1,9 +1,8 @@
 .{
-    .name = "protobuf-zig",
+    .name = .protobuf_zig,
     .version = "0.0.0",
-
-    .minimum_zig_version = "0.13.0-dev.261+710d745a5",
-
+    .minimum_zig_version = "0.14.0",
+    .fingerprint = 0x81ec46ae330b380d,
     .dependencies = .{
         .protobuf_linux = .{
             .url = "https://github.com/protocolbuffers/protobuf/releases/download/v27.0/protoc-27.0-linux-x86_64.zip",
