@@ -247,9 +247,9 @@ fn serializeField(
     const is_map = field.descriptor != null and
         (field.type == .TYPE_MESSAGE or field.type == .TYPE_GROUP) and
         flagsContain(
-        field.getDescriptor(MessageDescriptor).flags,
-        MessageDescriptor.Flag.FLAG_MAP_TYPE,
-    );
+            field.getDescriptor(MessageDescriptor).flags,
+            MessageDescriptor.Flag.FLAG_MAP_TYPE,
+        );
 
     if (child_info.is_repeated and !is_map) {
         try writer.writeByte('[');

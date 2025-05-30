@@ -401,10 +401,10 @@ fn parseOneofMember(
         if (message.hasFieldId(oneof_id)) {
             const field_idx = intRangeLookup(descriptor.field_ids, oneof_id) catch
                 return deserializeErr(
-                "oneof_id {} not found in field_ids {}",
-                .{ oneof_id, descriptor.field_ids },
-                error.FieldMissing,
-            );
+                    "oneof_id {} not found in field_ids {}",
+                    .{ oneof_id, descriptor.field_ids },
+                    error.FieldMissing,
+                );
             log.debug("found existing oneof_id {} ", .{oneof_id});
             const old_field = descriptor.fields.items[field_idx];
             const ele_size = repeatedEleSize(old_field.type);
@@ -444,9 +444,9 @@ fn parseOptionalMember(
         true,
     ) catch |err|
         switch (err) {
-        error.FieldMissing => return,
-        else => return err,
-    };
+            error.FieldMissing => return,
+            else => return err,
+        };
     const field = scanned_member.field orelse unreachable;
     log.debug(
         "parseOptionalMember() setPresent({}) - {s}",
@@ -853,10 +853,10 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                 // endtag
                 sm.data_len = @as(u32, @intCast(mem.indexOf(u8, ctx.data, endtag_bytes) orelse
                     return deserializeErr(
-                    "group missing end tag. field '{s}' {}",
-                    .{ field.name, field.id },
-                    error.InvalidData,
-                )));
+                        "group missing end tag. field '{s}' {}",
+                        .{ field.name, field.id },
+                        error.InvalidData,
+                    )));
                 try ctx.skip(sm.data_len + @as(u32, @intCast(fbs.pos)));
             },
             .EGROUP => {},
@@ -875,7 +875,7 @@ pub fn deserialize(desc: *const MessageDescriptor, ctx: *Ctx) Error!*Message {
                 const list = structMemberPtr(ListMut(u8), message, field.offset);
                 if (tag.wire_type == .LEN and
                     (flagsContain(field.flags, FieldFlag.FLAG_PACKED) or
-                    isPackableType(field.type)))
+                        isPackableType(field.type)))
                 {
                     list.len += try sm.countPackedElements(field.type);
                 } else list.len += 1;

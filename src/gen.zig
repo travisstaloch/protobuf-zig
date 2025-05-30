@@ -332,10 +332,10 @@ pub fn gen(ctx: *Context) !CodeGeneratorResponse {
     for (ctx.req.file_to_generate.slice()) |file_to_gen| {
         const proto_file = ctx.depmap.get(file_to_gen.slice()) orelse
             return genErr(
-            "file_to_gen '{s}' not found in req.proto_file",
-            .{file_to_gen},
-            error.MissingDependency,
-        );
+                "file_to_gen '{s}' not found in req.proto_file",
+                .{file_to_gen},
+                error.MissingDependency,
+            );
         ctx.output.items.len = 0;
         try genFile(proto_file, ctx);
         var file = try ctx.alloc.create(CodeGeneratorResponse.File);

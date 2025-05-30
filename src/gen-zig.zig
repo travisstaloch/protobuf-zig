@@ -556,10 +556,10 @@ pub fn genPrelude(
     for (proto_file.dependency.slice()) |dep| {
         _ = ctx.depmap.get(dep.slice()) orelse
             return genErr(
-            "missing dependency '{s}'",
-            .{dep},
-            error.MissingDependency,
-        );
+                "missing dependency '{s}'",
+                .{dep},
+                error.MissingDependency,
+            );
         const import_info = try gen.importInfo(dep, proto_file);
         const suffix = if (import_info.is_keyword) "_" else "";
         try zig_writer.print("const {s}{s} = @import(\"", .{ import_info.ident, suffix });
