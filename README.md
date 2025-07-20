@@ -1,4 +1,7 @@
-:warning: This project is in its early early stages. expect bugs and missing features. :warning:
+# Archived
+This repo has been archived.  The author recommends using <https://github.com/Arwalk/zig-protobuf>.
+
+:warning: This project is in its early early stages. expect bugs and missing features.
 
 # About
 A tool for generating zig code capable of de/serializing to the protocol buffer wire format.  Depends on [protoc](https://developers.google.com/protocol-buffers/docs/downloads) to parse .proto files.  
